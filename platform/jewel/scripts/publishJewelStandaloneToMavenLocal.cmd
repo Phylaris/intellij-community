@@ -91,7 +91,7 @@ if [ -z "${build_number_arg}" ]; then
 fi
 
 publish_version="${jewel_version}-${build_number_arg}"
-src="${project_home}/out/idea-ce/artifacts/maven-artifacts"
+src="${project_home}/out/eadi-ce/artifacts/maven-artifacts"
 
 echo "─── Jewel Standalone Publish ───────────────────────────────"
 echo "  Jewel version:          $jewel_version  ($jewel_props_file)"
@@ -193,7 +193,7 @@ if not defined BUILD_NUMBER (
 
 set "BUILD_NUMBER_ARG=%BUILD_NUMBER%"
 set "PUBLISH_VERSION=%JEWEL_VERSION%-%BUILD_NUMBER%"
-set "SRC=%PROJECT_HOME%\out\idea-ce\artifacts\maven-artifacts"
+set "SRC=%PROJECT_HOME%\out\eadi-ce\artifacts\maven-artifacts"
 
 echo --- Jewel Standalone Publish -------------------------------------------
 echo   Jewel version:          %JEWEL_VERSION%  (%JEWEL_PROPS_FILE%)

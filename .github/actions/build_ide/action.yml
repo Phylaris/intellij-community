@@ -64,7 +64,8 @@ runs:
       with:
         repository: JetBrains/android
         path: android
-        ref: ${{github.ref}}
+        # A fixed ref is required here, because a fork may not have a branch with the same name.
+        ref: master
     - name: Build environment
       shell: bash
       # language=bash

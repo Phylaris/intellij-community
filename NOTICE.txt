@@ -1,3 +1,6 @@
 This software includes code from IntelliJ IDEA
 Copyright (C) JetBrains s.r.o.
 https://www.jetbrains.com/idea/
+
+This is a modified distribution of the software above.
+The product name and the vendor name were changed.

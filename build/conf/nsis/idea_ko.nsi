@@ -15,7 +15,7 @@ LangString create_associations_group ${LANG_KOREAN} "연결 생성"
 ; Rider-specific
 LangString system_integration ${LANG_KOREAN} "시스템 통합"
 LangString microsoft_defender ${LANG_KOREAN} "Microsoft Defender"
-LangString install_etw_service ${LANG_KOREAN} "JetBrains ETW Host Service 설치"
+LangString install_etw_service ${LANG_KOREAN} "EADI ETW Host Service 설치"
 LangString windows_defender_exclusions ${LANG_KOREAN} "Rider 실행 파일 제외"
 LangString exclude_rider_processes ${LANG_KOREAN} "Rider 프로세스 제외*"
 LangString exclude_rider_processes_text ${LANG_KOREAN} "* 이러한 프로세스에 대한 실시간 검사, ASR 규칙, 네트워크 보호를 비활성화합니다."

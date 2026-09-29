@@ -113,7 +113,7 @@ private class ValidateMavenArtifactsCommand : SuspendingCliktCommand() {
 
         if (verbose) println("  Original branch: $originalBranch")
 
-        val mavenArtifactsDir = communityRoot.resolve("out/idea-ce/artifacts/$mavenArtifactsOutputDirName")
+        val mavenArtifactsDir = communityRoot.resolve("out/eadi-ce/artifacts/$mavenArtifactsOutputDirName")
         val artifactsDirectory = artifactsDir ?: Files.createTempDirectory("jewel-artifacts").toFile()
 
         if (noBuild) {

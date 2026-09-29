@@ -40,7 +40,7 @@ OutFile "${OUT_DIR}\${OUT_FILE}.exe"
 InstallDir "${DEFAULT_INST_DIR}"
 
 !define /date CURRENT_YEAR "%Y"
-VIAddVersionKey /LANG=0 "CompanyName" "JetBrains s.r.o."
+VIAddVersionKey /LANG=0 "CompanyName" "${MANUFACTURER}"
 VIAddVersionKey /LANG=0 "FileDescription" "${MUI_PRODUCT} Windows Installer"
 VIAddVersionKey /LANG=0 "FileVersion" "${VER_BUILD}"
 VIAddVersionKey /LANG=0 "LegalCopyright" "Copyright 2000-${CURRENT_YEAR} JetBrains s.r.o."
@@ -272,9 +272,9 @@ Function silentConfigReader
     !define msg1 "How to run installation in silent mode:$\n"
     !define msg2 "<installation> /S /CONFIG=<path to silent config with file name> /D=<install dir>$\n$\n"
     !define msg3 "Examples:$\n"
-    !define msg4 "Installation.exe /S /CONFIG=d:\download\silent.config /D=d:\JetBrains\Product$\n"
+    !define msg4 "Installation.exe /S /CONFIG=d:\download\silent.config /D=d:\EADI\Product$\n"
     !define msg5 "Run installation in silent mode with logging:$\n"
-    !define msg6 "Installation.exe /S /CONFIG=d:\download\silent.config /LOG=d:\JetBrains\install.log /D=d:\JetBrains\Product$\n"
+    !define msg6 "Installation.exe /S /CONFIG=d:\download\silent.config /LOG=d:\EADI\install.log /D=d:\EADI\Product$\n"
     MessageBox MB_OK|MB_ICONSTOP "${msg1}${msg2}${msg3}${msg4}${msg5}${msg6}"
     ${LogText} "ERROR: silent installation: incorrect parameters."
     Abort
@@ -563,8 +563,8 @@ Function UninstallRecord
   WriteRegStr SHCTX $0 "InstallLocation" "$INSTDIR"
   WriteRegStr SHCTX $0 "DisplayIcon" "$productLauncher"
   WriteRegStr SHCTX $0 "DisplayVersion" "${VER_BUILD}"
-  WriteRegStr SHCTX $0 "Publisher" "JetBrains s.r.o."
-  WriteRegStr SHCTX $0 "URLInfoAbout" "https://www.jetbrains.com/products"
+  WriteRegStr SHCTX $0 "Publisher" "${MANUFACTURER}"
+  WriteRegStr SHCTX $0 "URLInfoAbout" ""
   WriteRegDWORD SHCTX $0 "NoModify" 1
   WriteRegDWORD SHCTX $0 "NoRepair" 1
 FunctionEnd
@@ -619,8 +619,8 @@ Function ProductAssociation
 
   ${If} ${IPR} == "true"
     StrCpy $R0 ".ipr"
-    StrCpy $R1 "IntelliJIdeaProjectFile"
-    StrCpy $R2 "IntelliJ IDEA Project File"
+    StrCpy $R1 "EADIProjectFile"
+    StrCpy $R2 "EADI Project File"
     Call DoProductAssociation
   ${EndIf}
 FunctionEnd
@@ -1300,13 +1300,13 @@ Function un.ProductAssociation
   ${EndIf}
 
   ; dropping the .ipr association
-  ReadRegStr $0 SHCTX "Software\Classes\IntelliJIdeaProjectFile\DefaultIcon" ""
+  ReadRegStr $0 SHCTX "Software\Classes\EADIProjectFile\DefaultIcon" ""
   ${If} $0 == "$INSTDIR\bin\${PRODUCT_EXE_FILE},0"
     ReadRegStr $0 SHCTX "Software\Classes\.ipr" ""
-    ${If} $0 == "IntelliJIdeaProjectFile"
+    ${If} $0 == "EADIProjectFile"
       WriteRegStr SHCTX "Software\Classes\.ipr" "" ""
     ${EndIf}
-    DeleteRegKey SHCTX "Software\Classes\IntelliJIdeaProjectFile"
+    DeleteRegKey SHCTX "Software\Classes\EADIProjectFile"
   ${EndIf}
 FunctionEnd
 

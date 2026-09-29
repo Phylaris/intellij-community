@@ -1,0 +1,41 @@
+name: EADI Installers
+
+on:
+  workflow_dispatch:
+
+jobs:
+  installers:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - product: intellij_idea
+            artifacts_dir: out/eadi-ce/artifacts
+            artifact_name: eadi-windows-x64-installer
+          - product: pycharm
+            artifacts_dir: out/charmpy-ce/artifacts
+            artifact_name: charmpy-windows-x64-installer
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: ./.github/actions/build_ide
+        with:
+          product: ${{matrix.product}}
+      - name: Generate checksums
+        shell: bash
+        # language=bash
+        run: |
+          cd "${{matrix.artifacts_dir}}"
+          for it in *.SNAPSHOT.exe; do
+            sha256sum --binary "$it" > "$it.sha256"
+          done
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v6.0.0
+        with:
+          name: ${{matrix.artifact_name}}
+          if-no-files-found: 'error'
+          retention-days: 7
+          path: |
+            ${{matrix.artifacts_dir}}/*.SNAPSHOT.exe
+            ${{matrix.artifacts_dir}}/*.SNAPSHOT.exe.sha256
+            ${{matrix.artifacts_dir}}/*.SNAPSHOT.exe.spdx.json

@@ -124,7 +124,7 @@ open class IdeaCommunityProperties(private val communityHomeDir: Path) : JetBrai
   }
 
   override val baseFileName: String
-    get() = "idea"
+    get() = "eadi"
 
   override fun getProductContentDescriptor(): ProductModulesContentSpec = productModules {
     include(intellijCommunityBaseFragment(platformPrefix))
@@ -153,12 +153,12 @@ open class IdeaCommunityProperties(private val communityHomeDir: Path) : JetBrai
   override fun createMacCustomizer(projectHome: Path): MacDistributionCustomizer = ideaCommunityMacCustomizer(communityHomeDir)
 
   override fun getSystemSelector(appInfo: ApplicationInfoProperties, buildNumber: String): String {
-    return "IdeaIC${appInfo.majorVersion}.${appInfo.minorVersionMainPart}"
+    return "EadiIC${appInfo.majorVersion}.${appInfo.minorVersionMainPart}"
   }
 
-  override fun getBaseArtifactName(appInfo: ApplicationInfoProperties, buildNumber: String): String = "ideaIC-$buildNumber"
+  override fun getBaseArtifactName(appInfo: ApplicationInfoProperties, buildNumber: String): String = "eadiIC-$buildNumber"
 
-  override fun getOutputDirectoryName(appInfo: ApplicationInfoProperties): String = "idea-ce"
+  override fun getOutputDirectoryName(appInfo: ApplicationInfoProperties): String = "eadi-ce"
 }
 
 @Suppress("unused")
@@ -251,12 +251,8 @@ inline fun ideaCommunityWindowsCustomizer(
 ): WindowsDistributionCustomizer = windowsCustomizer(projectHome) {
   fileAssociations = listOf("java", "gradle", "groovy", "kt", "kts", "pom")
 
-  fullName { "IntelliJ IDEA Open Source" }
-  installDirNameHandler { "IntelliJ IDEA OSS" }
-
-  uninstallFeedbackUrl { appInfo ->
-    "https://www.jetbrains.com/idea/uninstall/?edition=IC-${appInfo.majorVersion}.${appInfo.minorVersion}"
-  }
+  fullName { "EADI Open Source" }
+  installDirNameHandler { "EADI OSS" }
 
   configure()
 }
@@ -265,12 +261,12 @@ inline fun ideaCommunityMacCustomizer(
   projectHome: Path,
   configure: MacCustomizerBuilder.() -> Unit = {},
 ): MacDistributionCustomizer = macCustomizer(projectHome) {
-  urlSchemes = listOf("idea")
+  urlSchemes = listOf("eadi")
   associateIpr = true
   fileAssociations = FileAssociation.from("java", "groovy", "kt", "kts")
-  bundleIdentifier = "com.jetbrains.intellij.ce"
+  bundleIdentifier = "com.eadi.intellij.ce"
 
-  rootDirectoryName { _, _ -> "IntelliJ IDEA OSS.app" }
+  rootDirectoryName { _, _ -> "EADI OSS.app" }
 
   executableFilePatterns { base, _, _, _ ->
     val kotlinExecutables = KotlinBinaries.kotlinCompilerExecutables
@@ -285,7 +281,7 @@ inline fun ideaCommunityLinuxCustomizer(
   configure: LinuxCustomizerBuilder.() -> Unit = {},
 ): LinuxDistributionCustomizer = linuxCustomizer(projectHome) {
 
-  rootDirectoryName { _, _ -> "idea-oss" }
+  rootDirectoryName { _, _ -> "eadi-oss" }
 
   executableFilePatterns { base, _, _, _, _ ->
     base.plus(KotlinBinaries.kotlinCompilerExecutables).filterNot { it == "plugins/**/*.sh" }

@@ -15,7 +15,7 @@ LangString create_associations_group ${LANG_ENGLISH} "Create Associations"
 ; Rider-specific
 LangString system_integration ${LANG_ENGLISH} "System Integration"
 LangString microsoft_defender ${LANG_ENGLISH} "Microsoft Defender"
-LangString install_etw_service ${LANG_ENGLISH} "Install JetBrains ETW Host Service"
+LangString install_etw_service ${LANG_ENGLISH} "Install EADI ETW Host Service"
 LangString windows_defender_exclusions ${LANG_ENGLISH} "Exclude Rider executables"
 LangString exclude_rider_processes ${LANG_ENGLISH} "Exclude Rider processes*"
 LangString exclude_rider_processes_text ${LANG_ENGLISH} "* Disables real-time scanning, ASR rules, and Network Protection for rider processes."

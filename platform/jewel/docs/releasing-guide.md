@@ -91,7 +91,7 @@ This will publish Jewel Standalone to the local Maven repository (`~/.m2/reposit
 when you omit it, the script reads it from [`build.txt`](../../../build.txt) in the project root, e.g., `263.SNAPSHOT`.
 
 The script builds the `//build:jewel_standalone_maven_artifacts` Bazel target. That compiles the Jewel modules and
-generates the artefacts into `out/idea-ce/artifacts/maven-artifacts`, then copies them into `~/.m2/repository`. You can
+generates the artefacts into `out/eadi-ce/artifacts/maven-artifacts`, then copies them into `~/.m2/repository`. You can
 inspect the POMs in either place, but keep in mind the `out/` copy is wiped and regenerated on every run.
 
 Generation runs with validation on, so [`JewelMavenArtifacts.validate`](../../../build/src/org/jetbrains/intellij/build/JewelMavenArtifacts.kt)

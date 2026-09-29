@@ -110,7 +110,7 @@ internal class ValidateMavenArtifactsCommand(
 
             if (verbose) println("  Original branch: $originalBranch")
 
-            val mavenArtifactsDir = communityRoot.resolve("out/idea-ce/artifacts/$mavenArtifactsOutputDirName")
+            val mavenArtifactsDir = communityRoot.resolve("out/eadi-ce/artifacts/$mavenArtifactsOutputDirName")
             val artifactsDirectory =
                 artifactsDir?.let(::resolvePath) ?: Files.createTempDirectory("jewel-artifacts").toFile()
 
