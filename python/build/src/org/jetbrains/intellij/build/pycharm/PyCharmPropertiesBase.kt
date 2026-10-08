@@ -14,7 +14,7 @@ const val PYDEVD_PACKAGE: String = "pydevd_package"
 
 abstract class PyCharmPropertiesBase(enlargeWelcomeScreen: Boolean) : JetBrainsProductProperties() {
   override val baseFileName: String
-    get() = "charmpy"
+    get() = "pycharm"
 
   init {
     if (enlargeWelcomeScreen) {

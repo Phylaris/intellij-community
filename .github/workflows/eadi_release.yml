@@ -1,0 +1,154 @@
+name: EADI Release Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag. Leave empty to generate eadi-<version>-r<run number>'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - key: eadi
+            product: intellij_idea
+            artifacts_dir: out/eadi-ce/artifacts
+          - key: charmpy
+            product: pycharm
+            artifacts_dir: out/charmpy-ce/artifacts
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - name: Apply the EADI rebrand
+        shell: bash
+        # language=bash
+        run: bash .github/eadi/apply-rebrand.sh
+      - uses: ./.github/actions/build_ide
+        with:
+          product: ${{matrix.product}}
+      - name: Generate checksums
+        shell: bash
+        # language=bash
+        run: |
+          cd "${{matrix.artifacts_dir}}"
+          for it in *.SNAPSHOT.tar.gz *.SNAPSHOT.exe *.SNAPSHOT-aarch64.sit; do
+            if [ -f "$it" ]; then sha256sum --binary "$it" > "$it.sha256"; fi
+          done
+          for it in *.SNAPSHOT.tar.gz.spdx.json *.SNAPSHOT.exe.spdx.json *.SNAPSHOT-aarch64.sit.spdx.json; do
+            if [ -f "$it" ]; then sha256sum --binary "$it" > "$it.sha256"; fi
+          done
+      - name: Upload Linux and Windows artifacts
+        uses: actions/upload-artifact@v6.0.0
+        with:
+          name: ${{matrix.key}}-linux-windows
+          if-no-files-found: 'error'
+          retention-days: 1
+          path: |
+            ${{matrix.artifacts_dir}}/*.SNAPSHOT.tar.gz
+            ${{matrix.artifacts_dir}}/*.SNAPSHOT.tar.gz.sha256
+            ${{matrix.artifacts_dir}}/*.SNAPSHOT.tar.gz.spdx.json
+            ${{matrix.artifacts_dir}}/*.SNAPSHOT.exe
+            ${{matrix.artifacts_dir}}/*.SNAPSHOT.exe.sha256
+            ${{matrix.artifacts_dir}}/*.SNAPSHOT.exe.spdx.json
+      - name: Upload macOS sit
+        uses: actions/upload-artifact@v6.0.0
+        with:
+          name: ${{matrix.key}}-mac-aarch64-sit
+          if-no-files-found: 'error'
+          retention-days: 1
+          path: |
+            ${{matrix.artifacts_dir}}/*.SNAPSHOT-aarch64.sit
+            ${{matrix.artifacts_dir}}/*.SNAPSHOT-aarch64.sit.sha256
+            ${{matrix.artifacts_dir}}/*.SNAPSHOT-aarch64.sit.spdx.json
+      - name: Upload .dmg build scripts
+        uses: actions/upload-artifact@v6.0.0
+        with:
+          name: ${{matrix.key}}-mac-dmg-scripts
+          if-no-files-found: 'error'
+          retention-days: 1
+          path: ${{matrix.artifacts_dir}}/macos-dmg-build/
+
+  dmg:
+    needs: build
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        key: [eadi, charmpy]
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - name: Download .dmg build scripts
+        uses: actions/download-artifact@v7.0.0
+        with:
+          name: ${{matrix.key}}-mac-dmg-scripts
+      - name: Download aarch64.sit
+        uses: actions/download-artifact@v7.0.0
+        with:
+          name: ${{matrix.key}}-mac-aarch64-sit
+      - name: Build aarch64.dmg
+        shell: bash
+        # language=bash
+        run: /bin/bash ./build.sh
+      - name: Generate checksums
+        shell: bash
+        # language=bash
+        run: |
+          for it in *.SNAPSHOT-aarch64.dmg *.SNAPSHOT-aarch64.dmg.spdx.json; do
+            if [ -f "$it" ]; then shasum --algorithm 256 --binary "$it" > "$it.sha256"; fi
+          done
+      - name: Upload dmg
+        uses: actions/upload-artifact@v6.0.0
+        with:
+          name: ${{matrix.key}}-mac-aarch64-dmg
+          if-no-files-found: 'error'
+          retention-days: 1
+          path: |
+            *.SNAPSHOT-aarch64.dmg
+            *.SNAPSHOT-aarch64.dmg.sha256
+            *.SNAPSHOT-aarch64.dmg.spdx.json
+
+  release:
+    needs: [build, dmg]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - name: Download all artifacts
+        uses: actions/download-artifact@v7.0.0
+        with:
+          path: dist
+      - name: Determine the release tag
+        id: tag
+        shell: bash
+        # language=bash
+        run: |
+          if [ -n "${{inputs.tag}}" ]; then
+            tag="${{inputs.tag}}"
+          else
+            version="$(grep -o -E 'major="[0-9]+" minor="[0-9]+"' community-resources/resources/idea/IdeaApplicationInfo.xml | head -1 | sed -E 's/major="([0-9]+)"/\1/; s/ minor="/./; s/"//')"
+            tag="eadi-${version}-r${{github.run_number}}"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "EADI release tag: $tag"
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{github.token}}
+        shell: bash
+        # language=bash
+        run: |
+          gh release create "${{steps.tag.outputs.tag}}" \
+            dist/eadi-linux-windows/* \
+            dist/eadi-mac-aarch64-dmg/* \
+            dist/charmpy-linux-windows/* \
+            dist/charmpy-mac-aarch64-dmg/* \
+            --target "${{github.sha}}" \
+            --title "EADI / CharmPy ${{steps.tag.outputs.tag}}" \
+            --notes "EADI and CharmPy community builds. Source commit: ${{github.sha}}, workflow run: ${{github.run_number}}."

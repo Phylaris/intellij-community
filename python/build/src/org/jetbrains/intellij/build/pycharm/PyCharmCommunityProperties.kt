@@ -97,31 +97,35 @@ class PyCharmCommunityProperties(private val communityHome: Path) : PyCharmPrope
   }
 
   override fun getSystemSelector(appInfo: ApplicationInfoProperties, buildNumber: String): String {
-    return "CharmPyCE${appInfo.majorVersion}.${appInfo.minorVersionMainPart}"
+    return "PyCharmCE${appInfo.majorVersion}.${appInfo.minorVersionMainPart}"
   }
 
-  override fun getBaseArtifactName(appInfo: ApplicationInfoProperties, buildNumber: String): String = "charmpyPC-$buildNumber"
+  override fun getBaseArtifactName(appInfo: ApplicationInfoProperties, buildNumber: String): String = "pycharmPC-$buildNumber"
 
   override fun createWindowsCustomizer(projectHome: Path): WindowsDistributionCustomizer = windowsCustomizer(communityHome) {
     fileAssociations = SUPPORTED_FILE_EXTENSIONS
 
-    fullName { "CharmPy Open Source" }
-    installDirNameHandler { "CharmPy OSS" }
+    fullName { "PyCharm Open Source" }
+    installDirNameHandler { "PyCharm OSS" }
 
     copyAdditionalFiles { targetDir, _, context ->
       PyCharmBuildUtils.copySkeletons(context, targetDir, "skeletons-win*.zip")
+    }
+
+    uninstallFeedbackUrl { appInfo ->
+      "https://www.jetbrains.com/pycharm/uninstall/?version=${appInfo.productCode}-${appInfo.majorVersion}.${appInfo.minorVersion}"
     }
   }
 
   override fun createMacCustomizer(projectHome: Path): MacDistributionCustomizer = object : MacDistributionCustomizer() {
     init {
-      bundleIdentifier = "com.eadi.pycharm.ce"
+      bundleIdentifier = "com.jetbrains.pycharm.ce"
       fileAssociations = SUPPORTED_FILE_EXTENSIONS.map {
         FileAssociation(it)
       }
     }
 
-    override fun getRootDirectoryName(appInfo: ApplicationInfoProperties, buildNumber: String): String = "CharmPy OSS.app"
+    override fun getRootDirectoryName(appInfo: ApplicationInfoProperties, buildNumber: String): String = "PyCharm OSS.app"
 
     override fun copyAdditionalFiles(context: BuildContext, targetDir: Path, arch: JvmArchitecture) {
       super.copyAdditionalFiles(context, targetDir, arch)
@@ -134,8 +138,8 @@ class PyCharmCommunityProperties(private val communityHome: Path) : PyCharmPrope
   }
 
   override fun createLinuxCustomizer(projectHome: Path): LinuxDistributionCustomizer = object : LinuxDistributionCustomizer() {
-    override fun getRootDirectoryName(appInfo: ApplicationInfoProperties, buildNumber: String): String = "charmpy-oss"
+    override fun getRootDirectoryName(appInfo: ApplicationInfoProperties, buildNumber: String): String = "pycharm-oss"
   }
 
-  override fun getOutputDirectoryName(appInfo: ApplicationInfoProperties): String = "charmpy-ce"
+  override fun getOutputDirectoryName(appInfo: ApplicationInfoProperties): String = "pycharm-ce"
 }

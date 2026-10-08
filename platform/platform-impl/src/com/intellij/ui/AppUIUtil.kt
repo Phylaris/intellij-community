@@ -311,7 +311,7 @@ object AppUIUtil {
   @RequiresBackgroundThread(generateAssertion = false /* IJPL-115548 */)
   fun loadConsentsForEditing(): List<Consent> {
     val options = ConsentOptions.getInstance()
-    var result = options.consents.first.toMutableList()
+    var result = options.consents.first
     if (options.isEAP) {
       val statConsent = options.defaultUsageStatsConsent
       if (statConsent != null) {
