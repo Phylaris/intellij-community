@@ -2,7 +2,6 @@
     "version": 2,
     "plugin": "intellij.clion",
     "variant": "darwin_aarch64",
-    "layoutSignature": "annmucx8sw22yja5d1e7gj6rt",
     "assets": [
         {
             "module": "intellij.cidr.apinotes"
@@ -193,20 +192,6 @@
             ],
             "kind": "tree",
             "classPath": false
-        }
-    ],
-    "preparations": [
-        {
-            "id": "layout-assets:resource-generator:0",
-            "inputs": [
-                "cidr-dependency:ninja:mac:aarch64",
-                "cidr-dependency:osx-starter:mac:aarch64",
-                "cidr-dependency:cmake:mac:aarch64"
-            ],
-            "outputs": [
-                "layout-assets:resource-generator:0:output"
-            ],
-            "modelSignature": "d5pf0w9tn26gi8qwvxvrz5cbk"
         }
     ],
     "operations": [

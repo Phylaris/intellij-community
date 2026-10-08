@@ -5,6 +5,12 @@ load("@rules_jvm//:jvm.bzl", "jvm_library")
 
 BAZEL_TARGETS_JSON = current_bazel_targets_json()
 
+filegroup(
+    name = "testData",
+    srcs = glob(["testData/**"]),
+    visibility = ["//visibility:public"],
+)
+
 jps_test(
     name = "tests_test",
     timeout = "eternal",
@@ -42,6 +48,7 @@ jvm_library(
         "//platform/vcs-api:vcs",
         "//platform/testFramework",
         "//platform/platform-impl:ide-impl",
+        "//platform/platform-impl/hprof",
         "//plugins/minimap/core",
         "//plugins/minimap/plugin",
         "//platform/usageView",
@@ -96,6 +103,7 @@ jvm_library(
         "//platform/platform-impl/initial-config-import:initial-config-import_test_lib",
         "//platform/observable:observable_test_lib",
         "//platform/platform-impl:ide-impl_test_lib",
+        "//platform/platform-impl/hprof:hprof_test_lib",
         "//plugins/minimap/plugin:plugin_test_lib",
         "//platform/ide-core-impl:ide-core-impl_test_lib",
         "//platform/ide-core/plugins:plugins_test_lib",
@@ -186,6 +194,7 @@ jvm_library(
         "//platform/testFramework",
         "//platform/testFramework:testFramework_test_lib",
         "//platform/platform-impl:ide-impl",
+        "//platform/platform-impl/hprof",
         "//plugins/minimap/core",
         "//plugins/minimap/core:core_test_lib",
         "//platform/usageView",
@@ -414,6 +423,10 @@ jvm_library(
         "//platform/vcs-impl/shared:shared_test_lib",
         "//platform/execution",
         "//platform/execution:execution_test_lib",
+        "//platform/consoleView",
+        "//platform/consoleView:consoleView_test_lib",
+        "//platform/consoleView/impl",
+        "//platform/consoleView/impl:impl_test_lib",
         "//libraries/jetcheck",
         "//libraries/jetcheck:jetcheck_test_lib",
         "//libraries/jediterm-core",

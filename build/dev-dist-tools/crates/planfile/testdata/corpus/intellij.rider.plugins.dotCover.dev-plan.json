@@ -2,7 +2,6 @@
     "version": 2,
     "plugin": "intellij.rider.plugins.dotCover",
     "variant": "{platform}",
-    "layoutSignature": "{platform:layoutSignature}",
     "assets": [
         {
             "module": "intellij.rider.plugins.dotCover.mcp"
@@ -32,24 +31,12 @@
             }
         },
         {
-            "destination": "",
+            "destination": "DotFiles",
             "inputs": [
                 "layout-assets:platform-resource-generator:0:output"
             ],
             "kind": "tree",
             "classPath": false
-        }
-    ],
-    "preparations": [
-        {
-            "id": "layout-assets:platform-resource-generator:0",
-            "inputs": [
-                "{platform:inputs}"
-            ],
-            "outputs": [
-                "layout-assets:platform-resource-generator:0:output"
-            ],
-            "modelSignature": "{platform:modelSignature}"
         }
     ],
     "operations": [
@@ -65,6 +52,7 @@
             "manifest": "keep",
             "layoutAssets": {
                 "format": "tree",
+                "root": "DotFiles",
                 "assets": [
                     {
                         "destination": "",

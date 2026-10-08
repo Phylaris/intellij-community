@@ -62,7 +62,7 @@ private class TerminalEventDispatcher(
   private val eventsHandler: TerminalKeyEventsHandler,
   private val parentDisposable: Disposable,
 ) : IdeEventQueue.NonLockedEventDispatcher {
-  private val sendShortcutAction = SendShortcutToTerminalAction(eventsHandler)
+  private val sendShortcutAction by lazy(LazyThreadSafetyMode.NONE) { SendShortcutToTerminalAction(eventsHandler) }
   private var myRegistered = false
   private var allowedActionIds: List<String> = emptyList()
 
@@ -301,6 +301,11 @@ private class TerminalKeyListener(
     handleEvent(e)
   }
 
+  override fun keyReleased(e: KeyEvent) {
+    if (settings.overrideIdeShortcuts()) return // handled by the dispatcher
+    eventsHandler.keyReleased(e) // consumed by the handler only when the shell got it
+  }
+
   private fun handleEvent(e: KeyEvent) {
     if (settings.overrideIdeShortcuts()) return // handled by the dispatcher
     eventsHandler.handleKeyEvent(e)
@@ -342,6 +347,7 @@ fun setupKeyEventsHandling(
 
     override fun focusLost(editor: Editor) {
       eventDispatcher.unregisterIfRegistered()
+      eventsHandler.focusLost()
     }
   }, disposable)
 

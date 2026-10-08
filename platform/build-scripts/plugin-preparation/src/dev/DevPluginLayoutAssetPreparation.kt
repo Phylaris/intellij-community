@@ -60,19 +60,9 @@ sealed interface DevPluginLayoutAssetSource {
     @JvmField val name: String,
   ) : DevPluginLayoutAssetSource
 
-  data class ModuleLibraries(
-    @JvmField val modules: List<String>,
-    @JvmField val allowedNames: Set<String>,
-  ) : DevPluginLayoutAssetSource
-
   data class ModuleLibrary(
     @JvmField val module: String,
     @JvmField val name: String,
-  ) : DevPluginLayoutAssetSource
-
-  data class ExternalLocalizationTree(
-    @JvmField val folder: String,
-    @JvmField val language: String,
   ) : DevPluginLayoutAssetSource
 
   /**
@@ -91,26 +81,11 @@ sealed interface DevPluginLayoutAssetSource {
   ) : DevPluginLayoutAssetSource
 
   /**
-   * The RustRover native helper archive. One archive holds the helper of every platform under `<os>/<arch>/`, where
-   * [os] is an `OsFamily.dirName` (`mac`, `linux`, `win`) and [arch] a `JvmArchitecture` name. The generator binds
-   * the source to the `dev_launch_rust_native_helper` repository. An asset selects its platform with an
-   * `archive-tree` mapping whose pattern is the `<os>/<arch>/` prefix followed by a double star.
-   */
-  data class RustNativeHelper(
-    @JvmField val os: String,
-    @JvmField val arch: String,
-  ) : DevPluginLayoutAssetSource
-
-  /**
    * A directory below `out/bundle-plugins` that a local backend build may create. The dev distribution declares its
    * files when present and writes an empty tree when absent. Both states have different action keys.
    */
   data class OptionalLocalDirectory(
     @JvmField val path: String,
-  ) : DevPluginLayoutAssetSource
-
-  data class GdScriptSdk(
-    @JvmField val version: String,
   ) : DevPluginLayoutAssetSource
 }
 
@@ -166,19 +141,45 @@ enum class JupyterFrontendOperation {
   LICENSES_ONLY,
 }
 
+/** States whether the classic dev build runs the production callback of a layout asset slot. */
+@ApiStatus.Internal
+enum class ClassicDevRun {
+  /** [SKIP] for an omitted slot, [RUN] for a declared slot. */
+  DERIVED,
+
+  /** The classic dev build runs the callback. */
+  RUN,
+
+  /** The classic dev build skips the callback. */
+  SKIP,
+}
+
 /**
  * Declares one callback's development layout as data.
  * Source indices refer to [sources] and preserve their declaration order.
+ *
+ * An [omitted] slot has no files in the dev distribution. [classicDev] states whether the classic dev build runs the
+ * callback, see [runsInClassicDev].
  */
 @ApiStatus.Internal
 data class DevPluginLayoutAssetSpec(
   @JvmField val sources: List<DevPluginLayoutAssetSource> = emptyList(),
   @JvmField val assets: List<DevPluginLayoutAsset> = emptyList(),
   @JvmField val omitted: Boolean = false,
+  @JvmField val classicDev: ClassicDevRun = ClassicDevRun.DERIVED,
 ) {
   init {
     require(!omitted || sources.isEmpty() && assets.isEmpty()) {
       "An omitted layout asset slot must not declare sources or assets"
+    }
+  }
+
+  /** Whether the classic dev build runs the callback. The classic dev build skips an omitted slot unless [classicDev] is [ClassicDevRun.RUN]. */
+  fun runsInClassicDev(): Boolean {
+    return when (classicDev) {
+      ClassicDevRun.DERIVED -> !omitted
+      ClassicDevRun.RUN -> true
+      ClassicDevRun.SKIP -> false
     }
   }
 
@@ -225,13 +226,13 @@ data class DevPluginLayoutAssetMapping(
 )
 
 /**
- * The transform for one layout asset. Use the factory functions to create supported transforms.
+ * The transform for one layout asset. `archive-tree` is the one kind: it extracts an archive. Use the factory function
+ * to create it. A tree needs no transform, because a plain copy places it.
  *
- * [includes] belong to `archive-tree`: ordered java.nio globs over the stripped entry path before mapping. A pattern
- * with a leading `!` excludes. The last matching pattern decides an entry. An entry no pattern matches is written when
- * every pattern excludes, and dropped otherwise. These are the `filePatterns` rules of a CIDR dependency.
- * [executables] belong to `archive-tree` and `tree-map`: java.nio globs over the same path, or over the
- * source-relative path of a tree. A regular file that matches gets the executable bits.
+ * [includes] are ordered java.nio globs over the stripped entry path before mapping. A pattern with a leading `!`
+ * excludes. The last matching pattern decides an entry. An entry no pattern matches is written when every pattern
+ * excludes, and dropped otherwise. These are the `filePatterns` rules of a CIDR dependency.
+ * [executables] are java.nio globs over the same path. A regular file that matches gets the executable bits.
  */
 @ApiStatus.Internal
 @OptIn(ExperimentalSerializationApi::class)
@@ -240,8 +241,6 @@ data class DevPluginLayoutAssetTransform(
   @JvmField val kind: String,
   @EncodeDefault(EncodeDefault.Mode.NEVER) @JvmField val stripComponents: Int = 0,
   @EncodeDefault(EncodeDefault.Mode.NEVER) @JvmField val mappings: List<DevPluginLayoutAssetMapping> = emptyList(),
-  @EncodeDefault(EncodeDefault.Mode.NEVER) @JvmField val excludes: List<String> = emptyList(),
-  @EncodeDefault(EncodeDefault.Mode.NEVER) @JvmField val directoryExcludes: List<String> = emptyList(),
   @EncodeDefault(EncodeDefault.Mode.NEVER) @JvmField val includes: List<String> = emptyList(),
   @EncodeDefault(EncodeDefault.Mode.NEVER) @JvmField val executables: List<String> = emptyList(),
 ) {
@@ -260,25 +259,6 @@ data class DevPluginLayoutAssetTransform(
         executables = executables,
       )
     }
-
-    fun gzipXmlArchive(): DevPluginLayoutAssetTransform {
-      return DevPluginLayoutAssetTransform(kind = "gzip-xml-archive")
-    }
-
-    fun treeMap(
-      mappings: List<DevPluginLayoutAssetMapping>,
-      excludes: List<String> = emptyList(),
-      directoryExcludes: List<String> = emptyList(),
-      executables: List<String> = emptyList(),
-    ): DevPluginLayoutAssetTransform {
-      return DevPluginLayoutAssetTransform(
-        kind = "tree-map",
-        mappings = mappings,
-        excludes = excludes,
-        directoryExcludes = directoryExcludes,
-        executables = executables,
-      )
-    }
   }
 }
 
@@ -293,7 +273,6 @@ data class DevPluginLayoutAssetPreparation(
 
 /**
  * Validates one layout-assets payload at generation time. The packer ports these rules to `plan.rs` of the `pluginpack` crate.
- * A `gzip-xml-archive` asset requires the `entries` format.
  */
 internal fun validateDevPluginLayoutAssetPreparation(
   preparation: DevPluginLayoutAssetPreparation,
@@ -311,11 +290,11 @@ internal fun validateDevPluginLayoutAssetPreparation(
     val transform = asset.transform
     require(asset.hostPlatforms.isEmpty()) { "A layout asset payload must not name host platforms: ${asset.destination}" }
     if (asset.destination.isEmpty()) {
-      // An entry asset writes its output root when every entry brings its own relative path: a mapped tree, an
-      // extracted archive, a gzip archive, or a copied directory. The packer checks the directory kind.
+      // An entry asset writes its output root when every entry brings its own relative path: an extracted archive or
+      // a copied directory. The packer checks the directory kind.
       require(preparation.format == "tree" ||
-              preparation.format == "entries" && transform?.kind in setOf("archive-tree", "gzip-xml-archive", "tree-map", null)) {
-        "Only a tree, a mapped entry asset, an extracted archive, a gzip archive, or a copied directory can use its output root"
+              preparation.format == "entries" && transform?.kind in setOf("archive-tree", null)) {
+        "Only a tree, an extracted archive, or a copied directory can use its output root"
       }
     }
     else {
@@ -327,25 +306,14 @@ internal fun validateDevPluginLayoutAssetPreparation(
       require(asset.sources.size == 1) { "A direct layout asset requires one source" }
       continue
     }
-    require(transform.kind in setOf("archive-tree", "gzip-xml-archive", "tree-map")) {
+    require(transform.kind == "archive-tree") {
       "Unknown layout asset transform '${transform.kind}'"
     }
     require(transform.stripComponents >= 0) { "A layout asset strip count must not be negative" }
-    require(transform.kind == "tree-map" || transform.excludes.isEmpty() && transform.directoryExcludes.isEmpty()) {
-      "Only a tree-map transform accepts exclusions"
-    }
-    for (pattern in transform.excludes + transform.directoryExcludes) {
-      require(pattern.isNotEmpty()) { "A layout asset exclusion requires a pattern" }
-      FileSystems.getDefault().getPathMatcher("glob:$pattern")
-    }
-    require(transform.kind == "archive-tree" || transform.includes.isEmpty()) { "Only an archive-tree transform accepts includes" }
     for (pattern in transform.includes) {
       val glob = pattern.removePrefix("!")
       require(glob.isNotEmpty()) { "A layout asset include requires a pattern" }
       FileSystems.getDefault().getPathMatcher("glob:$glob")
-    }
-    require(transform.kind in setOf("archive-tree", "tree-map") || transform.executables.isEmpty()) {
-      "Only an archive-tree or a tree-map transform accepts executable patterns"
     }
     for (pattern in transform.executables) {
       require(pattern.isNotEmpty()) { "A layout asset executable pattern requires a pattern" }
@@ -356,17 +324,8 @@ internal fun validateDevPluginLayoutAssetPreparation(
       if (mapping.destination.isNotEmpty()) validatePreparationPath(mapping.destination)
       FileSystems.getDefault().getPathMatcher("glob:${mapping.pattern}")
     }
-    when (transform.kind) {
-      "archive-tree" -> require(asset.sources.size == 1) {
-        "An archive-tree transform requires one archive"
-      }
-      "gzip-xml-archive" -> require(preparation.format == "entries" && asset.sources.isNotEmpty() && transform.stripComponents == 0 &&
-                                              transform.mappings.isEmpty()) {
-        "A gzip-xml-archive transform requires ordered archive inputs and an entries output"
-      }
-      "tree-map" -> require(asset.sources.isNotEmpty() && transform.stripComponents == 0 && transform.mappings.isNotEmpty()) {
-        "A tree-map transform requires ordered tree inputs and mappings"
-      }
+    require(asset.sources.size == 1) {
+      "An archive-tree transform requires one archive"
     }
   }
 }

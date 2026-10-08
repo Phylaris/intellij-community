@@ -2,7 +2,6 @@
     "version": 2,
     "plugin": "intellij.kotlin.plugin",
     "variant": "",
-    "layoutSignature": "d5mcgkgft0oz3e1hj9gc0ysyd",
     "assets": [
         {
             "module": "intellij.kotlin.highlighting.minimal"
@@ -1229,28 +1228,6 @@
             ],
             "kind": "tree",
             "classPath": false
-        }
-    ],
-    "preparations": [
-        {
-            "id": "layout-assets:layout-patcher:0",
-            "inputs": [
-                "@lib//:libraries-kotlinc-kotlin-compiler-common-kotlinc-kotlin-compiler-common"
-            ],
-            "outputs": [
-                "layout-assets:layout-patcher:0:output"
-            ],
-            "modelSignature": "5nwvwsnvbng4vmgyls2l3ts5k"
-        },
-        {
-            "id": "layout-assets:resource-generator:0",
-            "inputs": [
-                "@lib//:kotlinc-kotlin-dist"
-            ],
-            "outputs": [
-                "layout-assets:resource-generator:0:output"
-            ],
-            "modelSignature": "a19ow67xiytxbdv1o3r3ng8p4"
         }
     ],
     "operations": [

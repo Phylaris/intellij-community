@@ -2,7 +2,6 @@
     "version": 2,
     "plugin": "intellij.maven.plugin",
     "variant": "",
-    "layoutSignature": "cvw6zvcya13piz5y3p063vg4a",
     "assets": [
         {
             "destination": "lib/intellij.maven.model.jar",
@@ -354,39 +353,6 @@
             ],
             "kind": "tree",
             "classPath": false
-        }
-    ],
-    "preparations": [
-        {
-            "id": "layout-assets:resource-generator:0",
-            "inputs": [
-                "layout-source:resource-generator:0:0"
-            ],
-            "outputs": [
-                "layout-assets:resource-generator:0:output"
-            ],
-            "modelSignature": "5cihu15nbbpo4cwyliz1o8siw"
-        },
-        {
-            "id": "layout-assets:resource-generator:1",
-            "inputs": [
-                "layout-source:resource-generator:1:0",
-                "layout-source:resource-generator:1:1"
-            ],
-            "outputs": [
-                "layout-assets:resource-generator:1:output"
-            ],
-            "modelSignature": "8dd3on47wmc2zy9wzkxfxqvow"
-        },
-        {
-            "id": "layout-assets:resource-generator:2",
-            "inputs": [
-                "layout-source:resource-generator:2:0"
-            ],
-            "outputs": [
-                "layout-assets:resource-generator:2:output"
-            ],
-            "modelSignature": "ddl9woloxmxgucy2j416epkwj"
         }
     ],
     "operations": [

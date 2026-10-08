@@ -10,12 +10,16 @@ import org.jetbrains.intellij.build.impl.moduleRepository.MODULE_DESCRIPTORS_COM
 /**
  * The JVM arguments of [jvm] for [os] and [arch], as `BuildContext.getAdditionalJvmArguments` states them.
  *
+ * [vendorName] is the short company name of the application info. [pathsSelector] is the system selector of the product.
+ *
  * [openedPackages] are the `--add-opens` lines of [os]. [isScript] quotes the arguments that hold a path macro.
  * [isPortableDist] drops `/Contents` from the macOS macro. [isQodana] leaves the multi-routing file system out.
  */
 @ApiStatus.Internal
 fun renderAdditionalJvmArguments(
   jvm: ProductJvmArguments,
+  vendorName: String,
+  pathsSelector: String,
   os: OsFamily,
   arch: JvmArchitecture,
   openedPackages: List<String>,
@@ -50,20 +54,20 @@ fun renderAdditionalJvmArguments(
     }
   }
 
-  result.add("-Didea.vendor.name=${jvm.vendorName}")
-  result.add("-Didea.paths.selector=${jvm.pathsSelector}")
+  result.add("-Didea.vendor.name=$vendorName")
+  result.add("-Didea.paths.selector=$pathsSelector")
 
-  if (jvm.jna) {
-    result.add("-Djna.boot.library.path=$macroName/lib/jna/${arch.dirName}".quoteIfNeeded())
+  jvm.jnaNativeDir?.let {
+    result.add("-Djna.boot.library.path=$macroName/$it/${arch.dirName}".quoteIfNeeded())
     result.add("-Djna.nosys=true")
     result.add("-Djna.noclasspath=true")
   }
-  if (jvm.pty4j) {
-    result.add("-Dpty4j.preferred.native.folder=$macroName/lib/pty4j".quoteIfNeeded())
+  jvm.pty4jNativeDir?.let {
+    result.add("-Dpty4j.preferred.native.folder=$macroName/$it".quoteIfNeeded())
   }
   result.add("-Dio.netty.allocator.type=pooled")
-  if (jvm.skiko) {
-    result.add("-Dskiko.library.path=$macroName/lib/skiko-awt-runtime-all".quoteIfNeeded())
+  jvm.skikoNativeDir?.let {
+    result.add("-Dskiko.library.path=$macroName/$it".quoteIfNeeded())
   }
 
   if (jvm.runtimeModuleRepository) {

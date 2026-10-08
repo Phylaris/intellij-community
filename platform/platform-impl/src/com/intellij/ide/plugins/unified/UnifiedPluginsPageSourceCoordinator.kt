@@ -1,6 +1,7 @@
 // Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.ide.plugins.unified
 
+import com.intellij.core.CoreBundle
 import com.intellij.ide.plugins.InstalledPluginsTabSearchResultPanel
 import com.intellij.ide.plugins.MarketplaceTabSearchSortByOptions
 import com.intellij.ide.plugins.newui.MyPluginModel
@@ -22,6 +23,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
+import org.jetbrains.annotations.Nls
 
 internal data class UnifiedPluginMarketplaceSourceState(
   val queryRevision: Long,
@@ -31,6 +33,8 @@ internal data class UnifiedPluginMarketplaceSourceState(
   val suggestedFacetsLoading: Boolean = false,
   val popularTags: List<String> = emptyList(),
   val popularTagsLoading: Boolean = false,
+  val marketplaceVendors: List<String> = emptyList(),
+  val marketplaceVendorsLoading: Boolean = false,
 )
 
 internal data class UnifiedPluginsPageSourceState(
@@ -552,7 +556,7 @@ internal fun composeUnifiedPluginsSearchControls(
   cancellationCheck: () -> Unit = {},
 ): UnifiedPluginsSearchControlsState {
   val parsedQuery = UnifiedPluginsQuery.parse(query.rawQuery)
-  val facetItems = buildList {
+  val localFacetItems = buildList {
     localState.sections.asSequence()
       .filter { it.id == PluginSectionId.Installed || it.id == PluginSectionId.Bundled }
       .flatMap(PluginSectionState::items)
@@ -560,6 +564,9 @@ internal fun composeUnifiedPluginsSearchControls(
         cancellationCheck()
         add(item)
       }
+  }
+  val facetItems = buildList {
+    addAll(localFacetItems)
     internalState?.section?.items.orEmpty().forEach { item ->
       cancellationCheck()
       add(item)
@@ -575,9 +582,13 @@ internal fun composeUnifiedPluginsSearchControls(
       }
     }
   }
-  val vendors = facetItems.asSequence().mapNotNull(PluginItemState::searchVendor)
-    .plus(parsedQuery.vendors.asSequence())
-    .normalizedFacetValues()
+  val vendors = LinkedHashSet(localFacetItems.asSequence().mapNotNull(PluginItemState::searchVendor).normalizedFacetValues())
+  vendors.addAll(
+    facetItems.asSequence().mapNotNull(PluginItemState::searchVendor)
+      .plus(marketplaceState?.marketplaceVendors.orEmpty().asSequence())
+      .plus(parsedQuery.vendors.asSequence())
+      .normalizedFacetValues()
+  )
   val categories = facetItems.asSequence().mapNotNull(PluginItemState::searchCategory)
     .plus(parsedQuery.categories.asSequence())
     .normalizedFacetValues()
@@ -593,7 +604,7 @@ internal fun composeUnifiedPluginsSearchControls(
   }.distinct()
   return UnifiedPluginsSearchControlsState(
     options = UnifiedPluginFilterOptions(
-      vendors = vendors,
+      vendors = vendors.toList(),
       categories = categories,
       tags = tags,
       repositories = repositories,
@@ -601,6 +612,7 @@ internal fun composeUnifiedPluginsSearchControls(
                            internalState?.facetsLoading == true ||
                            marketplaceState?.suggestedFacetsLoading == true ||
                            marketplaceState?.popularTagsLoading == true ||
+                           marketplaceState?.marketplaceVendorsLoading == true ||
                            repositoryState?.facetsLoading == true,
       repositoriesLoading = repositoryState?.catalogLoading == true,
     ),
@@ -731,12 +743,17 @@ private fun compareBundledItems(first: PluginItemState, second: PluginItemState)
 private fun compareBundledCategories(first: PluginItemState, second: PluginItemState): Int {
   val firstCategory = bundledPluginCategory(first.searchCategory)
   val secondCategory = bundledPluginCategory(second.searchCategory)
-  val otherCategory = bundledPluginCategory(null)
-  return when {
-    firstCategory == secondCategory -> 0
-    firstCategory == otherCategory -> 1
-    secondCategory == otherCategory -> -1
-    else -> StringUtil.compare(firstCategory, secondCategory, false)
+  if (firstCategory == secondCategory) return 0
+  val rankComparison = bundledCategoryRank(firstCategory).compareTo(bundledCategoryRank(secondCategory))
+  return if (rankComparison != 0) rankComparison else StringUtil.compare(firstCategory, secondCategory, false)
+}
+
+/** Named categories come first, then Other, then Libraries. */
+private fun bundledCategoryRank(category: @Nls String): Int {
+  return when (category) {
+    bundledPluginCategory(null) -> 1
+    CoreBundle.message("plugin.category.Libraries") -> 2
+    else -> 0
   }
 }
 

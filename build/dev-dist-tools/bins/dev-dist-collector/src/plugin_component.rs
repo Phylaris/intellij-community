@@ -5,6 +5,9 @@
 //! that Bazel packed and the files that the plugin copies. A top-level `jars` key selects the packed shape, and then
 //! the collector writes the classpath record itself.
 //!
+//! A copied file of the packed shape can be a tree: one directory artifact that the collector walks when it runs. Each
+//! directory and each regular file of it keeps its mode.
+//!
 //! A prepared spec can name `refusedModules`: the content modules that the product mode of the component refuses. The
 //! packer omitted every asset whose modules are all refused, so the collector drops the reused jars of those modules
 //! from `independent` and expects no row for them. The packed shape lists only the placed jars, so it has no such key.
@@ -13,11 +16,11 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 
 use anyhow::{Context, bail};
-use component::inventory::SourcedFile;
 use filemeta::{Entry, EntryType};
-use planfile::contract::{self, Asset, DISTRIBUTION_SCOPE, PLUGIN_SCOPE, SCOPED_VERSION};
+use planfile::contract::{self, Asset, AssetKind, Producer, TREE_VERSION};
 use serde::Deserialize;
-use tracing::field::Empty;
+
+use crate::inventory::{Classpath, SourcedFile};
 
 /// The spec as the file states it. [`PluginComponentSpec::read`] checks that the keys form one of the two shapes.
 #[derive(Debug, Deserialize)]
@@ -72,13 +75,16 @@ pub(crate) struct PackedJar {
     pub(crate) metadata: String,
 }
 
-/// One file that a packed plugin copies. No packer writes metadata for it, so the inventory hashes the source.
+/// One file or one tree that a packed plugin copies. No packer writes metadata for it, so the inventory hashes the
+/// source. A file states `executable`. A tree states `tree` and no mode, because each of its files keeps its own.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct PackedFile {
     pub(crate) destination: String,
     pub(crate) source: String,
-    pub(crate) executable: bool,
+    pub(crate) executable: Option<bool>,
+    #[serde(default)]
+    pub(crate) tree: bool,
 }
 
 #[derive(Debug)]
@@ -125,7 +131,7 @@ impl PluginComponentSpec {
 
     fn prepared(file: &str, spec: SpecFile, outputs: &Outputs<'_>) -> anyhow::Result<Self> {
         let version = match u32::try_from(spec.version) {
-            Ok(version) if (contract::VERSION..=SCOPED_VERSION).contains(&version) => version,
+            Ok(version) if (contract::VERSION..=TREE_VERSION).contains(&version) => version,
             _ => bail!("unsupported plugin component version: {}", spec.version),
         };
         validate_plugin_directory(&spec.plugin_directory)?;
@@ -150,7 +156,7 @@ impl PluginComponentSpec {
             if artifact.artifact.trim().is_empty() || !identifiers.insert(artifact.artifact.as_str()) {
                 bail!("empty or duplicate independent artifact ID: {:?}", artifact.artifact);
             }
-            filemeta::validate_path(&artifact.relative_path)?;
+            distpath::validate_path(&artifact.relative_path)?;
             metadata.push(&artifact.metadata);
             payload.push(&artifact.source);
             if let Some(tree) = &artifact.native_tree {
@@ -198,6 +204,12 @@ impl PluginComponentSpec {
             payload.push(jar.source.as_str());
         }
         for copied in &spec.files {
+            if copied.tree == copied.executable.is_some() {
+                bail!(
+                    "copied file {} must state either executable or tree, and not both",
+                    copied.destination
+                );
+            }
             destinations.push(copied.destination.as_str());
             payload.push(copied.source.as_str());
         }
@@ -208,38 +220,31 @@ impl PluginComponentSpec {
 
     /// The files of the component and the classpath record of the plugin. The prepared shape ships the record, which
     /// the collector checks against the files. The packed shape has the collector write the record.
-    pub(crate) fn collect(&self, parent: &tracing::Span) -> anyhow::Result<(Vec<SourcedFile>, Vec<u8>)> {
+    pub(crate) fn collect(&self, parent: &trace::Span) -> anyhow::Result<(Vec<SourcedFile>, Vec<u8>)> {
         match self {
             Self::Prepared(spec) => {
-                let files = in_span(
-                    &tracing::info_span!(parent: parent, "merge plugin component metadata", byteCount = 0i64, fileCount = Empty),
-                    || collect_prepared(spec),
-                )?;
+                let files = in_span(&parent.child("merge plugin component metadata"), || collect_prepared(spec))?;
                 let classpath = std::fs::read(&spec.classpath).with_context(|| format!("read {}", spec.classpath))?;
-                component::plugin_classpath::validate_component_record(&classpath, &spec.plugin_directory, &files)?;
+                crate::plugin_classpath::validate_component_record(&classpath, &spec.plugin_directory, &files)?;
                 Ok((files, classpath))
             }
             Self::Packed(spec) => {
-                let files = in_span(
-                    &tracing::info_span!(parent: parent, "collect packed plugin jars", byteCount = 0i64, fileCount = Empty),
-                    || collect_packed(spec),
-                )?;
+                let files = in_span(&parent.child("collect packed plugin jars"), || collect_packed(spec))?;
                 let descriptor = std::fs::read(&spec.descriptor).with_context(|| format!("read {}", spec.descriptor))?;
-                let classpath = component::plugin_classpath::component_record(&spec.plugin_directory, &descriptor, &files)?;
+                let classpath = crate::plugin_classpath::component_record(&spec.plugin_directory, &descriptor, &files)?;
                 Ok((files, classpath))
             }
         }
     }
 }
 
-/// Runs `collect` in `span`, records the file count, and marks the span as failed on an error.
-fn in_span(span: &tracing::Span, collect: impl FnOnce() -> anyhow::Result<Vec<SourcedFile>>) -> anyhow::Result<Vec<SourcedFile>> {
+/// Runs `collect` in `span`, records the byte count 0 and the file count, and marks the span as failed on an error.
+fn in_span(span: &trace::Span, collect: impl FnOnce() -> anyhow::Result<Vec<SourcedFile>>) -> anyhow::Result<Vec<SourcedFile>> {
+    span.tag("byteCount", 0i64);
     let result = collect();
     match &result {
-        Ok(files) => {
-            span.record("fileCount", trace::count(files.len()));
-        }
-        Err(error) => trace::fail(span, &format_args!("{error:#}")),
+        Ok(files) => span.tag("fileCount", files.len()),
+        Err(error) => span.fail(&format_args!("{error:#}")),
     }
     result
 }
@@ -260,7 +265,7 @@ fn refused_modules(modules: Vec<String>) -> anyhow::Result<HashSet<String>> {
 }
 
 fn validate_plugin_directory(plugin_directory: &str) -> anyhow::Result<()> {
-    let valid = filemeta::validate_path(plugin_directory).is_ok()
+    let valid = distpath::validate_path(plugin_directory).is_ok()
         && plugin_directory.starts_with("plugins/")
         && plugin_directory.matches('/').count() == 1;
     if !valid {
@@ -270,32 +275,94 @@ fn validate_plugin_directory(plugin_directory: &str) -> anyhow::Result<()> {
 }
 
 /// Checks that every declared path is safe, and that no metadata input, payload artifact or output overlaps another.
+///
+/// Two paths overlap when one is the other or holds it. A path is absolute in the check when any declared path is
+/// absolute, as in [`overlap`]. Each error names the first overlapping path in declaration order.
 fn validate_artifact_paths(outputs: &Outputs<'_>, metadata: &[&str], payload: &[&str]) -> anyhow::Result<()> {
     let mut output_paths = vec![outputs.manifest, outputs.classpath];
     output_paths.extend(outputs.trace_file);
     for path in metadata.iter().chain(payload).chain(&output_paths) {
         validate_declared_artifact_path(path)?;
     }
+    let absolute = metadata
+        .iter()
+        .chain(payload)
+        .chain(&output_paths)
+        .any(|path| path.starts_with('/'));
+    let identity = |path: &str| distpath::path_identity(&source_identity_path(path, if absolute { "/" } else { "" })?);
+    let payload_index = PathIndex::new(payload, &identity)?;
     for source in metadata {
-        for artifact in payload {
-            if overlap(source, artifact)? {
-                bail!("metadata input {source} overlaps payload artifact {artifact}");
-            }
+        if let Some(index) = payload_index.first_overlap(&identity(source)?) {
+            bail!("metadata input {source} overlaps payload artifact {}", payload[index]);
         }
     }
+    let metadata_index = PathIndex::new(metadata, &identity)?;
+    let output_index = PathIndex::new(&output_paths, &identity)?;
     for (index, destination) in output_paths.iter().enumerate() {
-        for source in metadata.iter().chain(&output_paths[..index]) {
-            if overlap(destination, source)? {
-                bail!("output {destination} conflicts with metadata path {source}");
-            }
+        let destination_identity = identity(destination)?;
+        let source = metadata_index
+            .first_overlap(&destination_identity)
+            .map(|source| metadata[source])
+            .or_else(|| {
+                output_index
+                    .first_overlap(&destination_identity)
+                    .filter(|&output| output < index)
+                    .map(|output| output_paths[output])
+            });
+        if let Some(source) = source {
+            bail!("output {destination} conflicts with metadata path {source}");
         }
-        for artifact in payload {
-            if overlap(destination, artifact)? {
-                bail!("output {destination} overlaps payload artifact {artifact}");
-            }
+        if let Some(artifact) = payload_index.first_overlap(&destination_identity) {
+            bail!("output {destination} overlaps payload artifact {}", payload[artifact]);
         }
     }
     Ok(())
+}
+
+/// The declared paths of one kind by [`distpath::path_identity`], for the overlap checks of
+/// [`validate_artifact_paths`] without a loop over each pair. A value is the index of the first path in declaration
+/// order.
+struct PathIndex {
+    /// The identity of each path.
+    paths: HashMap<String, usize>,
+    /// The identity of each directory that holds a path.
+    holders: HashMap<String, usize>,
+}
+
+impl PathIndex {
+    fn new(paths: &[&str], identity: &dyn Fn(&str) -> anyhow::Result<String>) -> anyhow::Result<Self> {
+        let mut index = Self {
+            paths: HashMap::with_capacity(paths.len()),
+            holders: HashMap::new(),
+        };
+        for (position, path) in paths.iter().enumerate() {
+            let path = identity(path)?;
+            let mut current = path.as_str();
+            while let Some((parent, _)) = current.rsplit_once('/') {
+                index.holders.entry(parent.to_owned()).or_insert(position);
+                current = parent;
+            }
+            index.paths.entry(path).or_insert(position);
+        }
+        Ok(index)
+    }
+
+    /// The first path that is the path of `identity`, holds it, or lies below it.
+    fn first_overlap(&self, identity: &str) -> Option<usize> {
+        let mut first = [self.paths.get(identity), self.holders.get(identity)]
+            .into_iter()
+            .flatten()
+            .min()
+            .copied();
+        let mut current = identity;
+        while let Some((parent, _)) = current.rsplit_once('/') {
+            if let Some(&position) = self.paths.get(parent) {
+                first = Some(first.map_or(position, |first| first.min(position)));
+            }
+            current = parent;
+        }
+        first
+    }
 }
 
 /// Accepts a path in slash form, relative or absolute, with no empty, `.` or `..` name. Bazel declares every path in
@@ -311,11 +378,11 @@ fn validate_declared_artifact_path(path: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tells if one declared path is the other or holds it, by [`filemeta::path_identity`]. Two relative paths start at
+/// Tells if one declared path is the other or holds it, by [`distpath::path_identity`]. Two relative paths start at
 /// the same working directory, so the check makes a path absolute only when the other one is.
 fn overlap(first: &str, second: &str) -> anyhow::Result<bool> {
     let (first, second) = (source_identity_path(first, second)?, source_identity_path(second, first)?);
-    let (first, second) = (filemeta::path_identity(&first)?, filemeta::path_identity(&second)?);
+    let (first, second) = (distpath::path_identity(&first)?, distpath::path_identity(&second)?);
     Ok(first == second || first.starts_with(&format!("{second}/")) || second.starts_with(&format!("{first}/")))
 }
 
@@ -333,14 +400,14 @@ fn validate_packed_destinations(destinations: &[&str]) -> anyhow::Result<()> {
     let mut owned = HashSet::with_capacity(destinations.len());
     let mut spellings: HashMap<String, &str> = HashMap::with_capacity(destinations.len());
     for destination in destinations {
-        filemeta::validate_path(destination)?;
-        let identity = filemeta::path_identity(destination)?;
+        distpath::validate_path(destination)?;
+        let identity = distpath::path_identity(destination)?;
         if !owned.insert(identity.clone()) {
             bail!("conflicting plugin destinations: {} and {destination}", spellings[&identity]);
         }
         let mut prefix = *destination;
         loop {
-            let identity = filemeta::path_identity(prefix)?;
+            let identity = distpath::path_identity(prefix)?;
             if let Some(previous) = spellings.insert(identity, prefix)
                 && previous != prefix
             {
@@ -355,7 +422,7 @@ fn validate_packed_destinations(destinations: &[&str]) -> anyhow::Result<()> {
     for destination in destinations {
         let mut current = *destination;
         while let Some((parent, _)) = current.rsplit_once('/') {
-            if owned.contains(&filemeta::path_identity(parent)?) {
+            if owned.contains(&distpath::path_identity(parent)?) {
                 bail!("conflicting plugin destinations: {parent} contains {destination}");
             }
             current = parent;
@@ -364,22 +431,10 @@ fn validate_packed_destinations(destinations: &[&str]) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn scope(asset: &Asset) -> &str {
-    if asset.scope.is_empty() { PLUGIN_SCOPE } else { &asset.scope }
-}
-
-fn kind(asset: &Asset) -> &str {
-    if asset.kind.is_empty() { "file" } else { &asset.kind }
-}
-
-/// The destination in the distribution: a distribution-scope asset, the native tree of a reused jar, is at the root.
-/// Any other asset is below the plugin directory.
-fn component_destination(plugin_directory: &str, asset: &Asset, destination: &str) -> String {
-    if scope(asset) == DISTRIBUTION_SCOPE {
-        destination.to_owned()
-    } else {
-        format!("{plugin_directory}/{destination}")
-    }
+/// The destination in the distribution. Every asset is below the plugin directory, also the native tree of a reused
+/// jar.
+fn component_destination(plugin_directory: &str, destination: &str) -> String {
+    format!("{plugin_directory}/{destination}")
 }
 
 /// Tells if a plugin-relative destination is `lib/<name>.jar`, the shape that the plugin classpath lists.
@@ -444,30 +499,30 @@ fn tree_inventory(root: &str, inventory: &[Entry]) -> anyhow::Result<Vec<Entry>>
         }
         bail!("tree {root} requires root directory metadata");
     }
-    filemeta::validate_links(&links)?;
-    pluginpack::validate_link_graph(&directories, &links)?;
+    distpath::validate_links(&links)?;
+    planfile::validate::validate_link_graph(&directories, &links)?;
     Ok(owned)
 }
 
 /// Applies the shared asset rules and two rules that only the collector holds. Only a tree of the producer
-/// `independent` names an artifact. No tree lies at or below a file asset of the same scope.
+/// `independent` names an artifact. No tree lies at or below a file asset.
 pub(crate) fn validate_assets(version: u32, assets: &[Asset]) -> anyhow::Result<()> {
-    pluginpack::validate_assets(version, assets, true)?;
+    planfile::validate::validate_assets(version, assets, true)?;
     for asset in assets {
-        if kind(asset) == "tree" && !asset.artifact.is_empty() && asset.producer != "independent" {
+        if asset.kind == AssetKind::Tree && !asset.artifact.is_empty() && asset.producer != Producer::Independent {
             bail!("tree {} must not name an independent artifact", asset.destination);
         }
     }
     for (tree_index, tree) in assets.iter().enumerate() {
-        if kind(tree) != "tree" {
+        if tree.kind != AssetKind::Tree {
             continue;
         }
-        let tree_identity = filemeta::path_identity(&tree.destination)?;
+        let tree_identity = distpath::path_identity(&tree.destination)?;
         for (asset_index, asset) in assets.iter().enumerate() {
-            if asset_index == tree_index || scope(asset) != scope(tree) || kind(asset) != "file" {
+            if asset_index == tree_index || asset.kind != AssetKind::File {
                 continue;
             }
-            let asset_identity = filemeta::path_identity(&asset.destination)?;
+            let asset_identity = distpath::path_identity(&asset.destination)?;
             if tree_identity == asset_identity || tree_identity.starts_with(&format!("{asset_identity}/")) {
                 bail!("asset {} overlaps tree {}", asset.destination, tree.destination);
             }
@@ -516,7 +571,7 @@ fn collect_prepared(spec: &PreparedSpec) -> anyhow::Result<Vec<SourcedFile>> {
                 artifact.relative_path
             );
         }
-        let identity = filemeta::path_identity(&source_identity_path(&artifact.source, "")?)?;
+        let identity = distpath::path_identity(&source_identity_path(&artifact.source, "")?)?;
         if by_source.get(&identity).is_some_and(|previous| previous != entry) {
             bail!("conflicting metadata for independent source {}", artifact.source);
         }
@@ -537,7 +592,7 @@ fn collect_prepared(spec: &PreparedSpec) -> anyhow::Result<Vec<SourcedFile>> {
     // The remainder writes only plugin files, so a remainder asset is at its destination in the remainder directory.
     let mut claimed: HashMap<usize, Entry> = HashMap::new();
     for (index, asset) in assets.iter().enumerate() {
-        if kind(asset) == "tree" || asset.producer != "remainder" {
+        if asset.kind == AssetKind::Tree || asset.producer != Producer::Remainder {
             continue;
         }
         match remaining.remove(asset.destination.as_str()) {
@@ -550,7 +605,7 @@ fn collect_prepared(spec: &PreparedSpec) -> anyhow::Result<Vec<SourcedFile>> {
 
     // The most specific tree takes its entries first.
     let mut tree_indexes: Vec<usize> = (0..assets.len())
-        .filter(|&index| kind(&assets[index]) == "tree" && assets[index].producer == "remainder")
+        .filter(|&index| assets[index].kind == AssetKind::Tree && assets[index].producer == Producer::Remainder)
         .collect();
     tree_indexes.sort_by_key(|&index| std::cmp::Reverse(assets[index].destination.len()));
     let mut tree_entries: HashMap<usize, Vec<Entry>> = HashMap::with_capacity(tree_indexes.len());
@@ -567,17 +622,11 @@ fn collect_prepared(spec: &PreparedSpec) -> anyhow::Result<Vec<SourcedFile>> {
         tree_entries.insert(index, owned);
     }
 
-    let mut files = Vec::new();
-    let mut entries = Vec::with_capacity(assets.len());
+    let mut files = Vec::with_capacity(assets.len());
     let mut used = HashSet::new();
     let mut used_trees = HashSet::new();
-    let mut place = |file: SourcedFile, mut entry: Entry| {
-        entry.relative_path.clone_from(&file.relative_path);
-        entries.push(entry);
-        files.push(file);
-    };
     for (index, asset) in assets.iter().enumerate() {
-        if kind(asset) == "tree" && asset.producer == "independent" {
+        if asset.kind == AssetKind::Tree && asset.producer == Producer::Independent {
             let tree = native_trees.get(asset.artifact.as_str());
             let Some(tree) = tree.filter(|_| used_trees.insert(asset.artifact.as_str())) else {
                 bail!("missing or repeated native tree of {} for {}", asset.artifact, asset.destination);
@@ -586,27 +635,27 @@ fn collect_prepared(spec: &PreparedSpec) -> anyhow::Result<Vec<SourcedFile>> {
                 let (source, destination) = match entry.relative_path.strip_prefix(&format!("{NATIVE_TREE_ROOT}/")) {
                     Some(relative) => (
                         format!("{}/{relative}", tree.source),
-                        component_destination(&spec.plugin_directory, asset, &format!("{}/{relative}", asset.destination)),
+                        component_destination(&spec.plugin_directory, &format!("{}/{relative}", asset.destination)),
                     ),
                     None => (
                         tree.source.clone(),
-                        component_destination(&spec.plugin_directory, asset, &asset.destination),
+                        component_destination(&spec.plugin_directory, &asset.destination),
                     ),
                 };
-                place(tree_file(source, destination, entry), entry.clone());
+                files.push(tree_file(source, destination, entry));
             }
             continue;
         }
-        if kind(asset) == "tree" {
+        if asset.kind == AssetKind::Tree {
             for entry in tree_entries.get(&index).into_iter().flatten() {
                 let source = format!("{}/{}", spec.remainder.directory, entry.relative_path);
                 let destination = format!("{}/{}", spec.plugin_directory, entry.relative_path);
-                place(tree_file(source, destination, entry), entry.clone());
+                files.push(tree_file(source, destination, entry));
             }
             continue;
         }
-        let mut file = match asset.producer.as_str() {
-            "remainder" => {
+        let mut file = match asset.producer {
+            Producer::Remainder => {
                 let Some(entry) = claimed.get(&index) else {
                     bail!("stale remainder ownership for {}", asset.destination);
                 };
@@ -615,22 +664,23 @@ fn collect_prepared(spec: &PreparedSpec) -> anyhow::Result<Vec<SourcedFile>> {
                     ..SourcedFile::new(format!("{}/{}", spec.remainder.directory, asset.destination), "")
                 }
             }
-            "independent" => {
+            Producer::Independent => {
                 let Some(file) = independent.get(asset.artifact.as_str()) else {
                     bail!("missing independent artifact {} for {}", asset.artifact, asset.destination);
                 };
                 used.insert(asset.artifact.as_str());
                 file.clone()
             }
-            producer => bail!("unknown asset producer {producer:?}"),
         };
-        file.relative_path = component_destination(&spec.plugin_directory, asset, &asset.destination);
-        file.class_path = scope(asset) == PLUGIN_SCOPE && asset.class_path.unwrap_or(true) && is_plugin_lib_jar(&asset.destination);
-        let entry = file.metadata.clone().expect("every asset file has metadata");
+        file.relative_path = component_destination(&spec.plugin_directory, &asset.destination);
+        if asset.class_path.unwrap_or(true) && is_plugin_lib_jar(&asset.destination) {
+            file.classpath = Classpath::Plugin;
+        }
+        let entry = file.metadata.as_ref().expect("every asset file has metadata");
         if entry.entry_type != EntryType::Symlink {
             file.mode = Some(entry.mode);
         }
-        place(file, entry);
+        files.push(file);
     }
     if used_trees.len() != native_trees.len() {
         bail!(
@@ -645,20 +695,21 @@ fn collect_prepared(spec: &PreparedSpec) -> anyhow::Result<Vec<SourcedFile>> {
             independent.len() - used.len()
         );
     }
-    let mut destinations: HashMap<String, &str> = HashMap::with_capacity(entries.len());
-    for entry in &entries {
-        if let Some(previous) = destinations.insert(filemeta::path_identity(&entry.relative_path)?, &entry.relative_path) {
-            bail!("conflicting plugin destinations: {previous} and {}", entry.relative_path);
+    // A tree entry and an asset with equal metadata at one destination pass the inventory rules, so the identities
+    // need their own check. The inventory checks the other rules of all files together.
+    let mut destinations: HashMap<String, &str> = HashMap::with_capacity(files.len());
+    for file in &files {
+        if let Some(previous) = destinations.insert(distpath::path_identity(&file.relative_path)?, &file.relative_path) {
+            bail!("conflicting plugin destinations: {previous} and {}", file.relative_path);
         }
     }
-    filemeta::merge(&entries)?;
     Ok(files)
 }
 
 /// A file of a tree. A link keeps no mode, so the inventory records its target only.
 fn tree_file(source: String, relative_path: String, entry: &Entry) -> SourcedFile {
     SourcedFile {
-        source,
+        source: source.into(),
         mode: (entry.entry_type != EntryType::Symlink).then_some(entry.mode),
         metadata: Some(entry.clone()),
         ..SourcedFile::new("", relative_path)
@@ -666,30 +717,139 @@ fn tree_file(source: String, relative_path: String, entry: &Entry) -> SourcedFil
 }
 
 /// The jars of a packed plugin in their declared order, then its copied files. It reads only the metadata of the jars.
-/// A copied file has no metadata, so the inventory hashes its source.
+/// A copied file has no metadata, so the inventory hashes its source. A copied tree expands to its directories and
+/// its regular files.
 fn collect_packed(spec: &PackedSpec) -> anyhow::Result<Vec<SourcedFile>> {
     let mut files = Vec::with_capacity(spec.jars.len() + spec.files.len());
-    let mut entries = Vec::with_capacity(spec.jars.len());
     for jar in &spec.jars {
-        let mut entry = read_packed_jar_metadata(jar)?;
-        let file = SourcedFile {
-            mode: Some(entry.mode),
-            metadata: Some(entry.clone()),
-            class_path: is_plugin_lib_jar(&jar.destination),
-            ..SourcedFile::new(&jar.source, format!("{}/{}", spec.plugin_directory, jar.destination))
-        };
-        entry.relative_path.clone_from(&file.relative_path);
-        entries.push(entry);
-        files.push(file);
-    }
-    filemeta::merge(&entries)?;
-    for copied in &spec.files {
+        let entry = read_packed_jar_metadata(jar)?;
         files.push(SourcedFile {
-            executable: copied.executable,
-            ..SourcedFile::new(&copied.source, format!("{}/{}", spec.plugin_directory, copied.destination))
+            mode: Some(entry.mode),
+            metadata: Some(entry),
+            classpath: if is_plugin_lib_jar(&jar.destination) {
+                Classpath::Plugin
+            } else {
+                Classpath::None
+            },
+            ..SourcedFile::new(&jar.source, format!("{}/{}", spec.plugin_directory, jar.destination))
+        });
+    }
+    for copied in &spec.files {
+        let destination = format!("{}/{}", spec.plugin_directory, copied.destination);
+        if copied.tree {
+            let tree = CopiedTree {
+                source: &copied.source,
+                destination: &destination,
+                name: copied.source.rsplit('/').next().unwrap_or_default(),
+            };
+            // A Bazel sandbox can stage the root as a link to the directory, so the check follows a link.
+            let root = Path::new(&copied.source);
+            let Some(metadata) = std::fs::metadata(root).ok().filter(std::fs::Metadata::is_dir) else {
+                bail!("copied tree {} is not a directory: {}", copied.destination, copied.source);
+            };
+            files.push(CopiedTree::directory(&copied.source, &destination, &metadata));
+            tree.walk(root, "", &mut files)?;
+            continue;
+        }
+        files.push(SourcedFile {
+            executable: copied.executable.unwrap_or_default(),
+            ..SourcedFile::new(&copied.source, destination)
         });
     }
     Ok(files)
+}
+
+/// One copied tree of a packed plugin. `name` is the last name of the source, which a staging link repeats.
+struct CopiedTree<'a> {
+    source: &'a str,
+    destination: &'a str,
+    name: &'a str,
+}
+
+impl CopiedTree<'_> {
+    /// Adds one entry per directory and per regular file below `directory`, in byte order of the names. Each entry
+    /// keeps its mode, as a tree of a prepared plugin does. The inventory hashes each file.
+    fn walk(&self, directory: &Path, relative: &str, files: &mut Vec<SourcedFile>) -> anyhow::Result<()> {
+        let mut entries = std::fs::read_dir(directory)
+            .and_then(Iterator::collect::<std::io::Result<Vec<_>>>)
+            .with_context(|| format!("read tree directory {}", directory.display()))?;
+        entries.sort_by_key(std::fs::DirEntry::file_name);
+        for entry in entries {
+            let name = entry.file_name();
+            let Some(name) = name.to_str() else {
+                bail!(
+                    "copied tree {} holds a name that is not UTF-8: {}",
+                    self.destination,
+                    entry.path().display()
+                );
+            };
+            let relative = if relative.is_empty() {
+                name.to_owned()
+            } else {
+                format!("{relative}/{name}")
+            };
+            let path = entry.path();
+            let file_type = entry.file_type().with_context(|| path.display().to_string())?;
+            if file_type.is_dir() {
+                let metadata = entry.metadata().with_context(|| path.display().to_string())?;
+                files.push(Self::directory(
+                    &format!("{}/{relative}", self.source),
+                    &format!("{}/{relative}", self.destination),
+                    &metadata,
+                ));
+                self.walk(&path, &relative, files)?;
+                continue;
+            }
+            let metadata = if file_type.is_symlink() {
+                self.staged_file(&path, &relative)?
+            } else {
+                entry.metadata().with_context(|| path.display().to_string())?
+            };
+            if !metadata.is_file() {
+                bail!(
+                    "copied tree {} holds an entry that is not a regular file: {relative}",
+                    self.destination
+                );
+            }
+            let mode = filemeta::permissions(&metadata);
+            files.push(SourcedFile {
+                executable: mode & 0o111 != 0,
+                mode: Some(mode),
+                ..SourcedFile::new(format!("{}/{relative}", self.source), format!("{}/{relative}", self.destination))
+            });
+        }
+        Ok(())
+    }
+
+    /// The entry of one directory of the tree, with its mode.
+    fn directory(source: &str, destination: &str, metadata: &std::fs::Metadata) -> SourcedFile {
+        let entry = Entry {
+            relative_path: destination.to_owned(),
+            entry_type: EntryType::Directory,
+            mode: filemeta::permissions(metadata),
+            ..Entry::default()
+        };
+        SourcedFile {
+            metadata: Some(entry),
+            ..SourcedFile::new(source, destination)
+        }
+    }
+
+    /// The metadata of the file that a staging link names. A Bazel sandbox stages each file of an input tree as an
+    /// absolute link to the same path in the output tree. Every other link belongs to the tree, and a copy refuses it.
+    fn staged_file(&self, path: &Path, relative: &str) -> anyhow::Result<std::fs::Metadata> {
+        let target = filemeta::read_link_target(path).with_context(|| path.display().to_string())?;
+        let staged = Path::new(&target).is_absolute()
+            && Path::new(&target).ends_with(Path::new(self.name).join(component::paths::from_slash(relative).as_ref()));
+        let metadata = staged.then(|| std::fs::symlink_metadata(&target).ok()).flatten();
+        match metadata {
+            Some(metadata) if metadata.is_file() => Ok(metadata),
+            _ => bail!(
+                "copied tree {} holds the link {relative} to {target}, and a copied tree takes regular files only",
+                self.destination
+            ),
+        }
+    }
 }
 
 /// Reads the one-file inventory that the packer wrote beside the jar. The packer names the entry after the jar file,
@@ -703,3 +863,6 @@ fn read_packed_jar_metadata(jar: &PackedJar) -> anyhow::Result<Entry> {
         _ => bail!("packed jar {} requires metadata for exactly one regular file", jar.source),
     }
 }
+
+#[cfg(test)]
+mod tests;

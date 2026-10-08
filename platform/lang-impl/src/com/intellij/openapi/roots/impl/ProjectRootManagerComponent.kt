@@ -9,6 +9,7 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.readAction
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.diagnostic.debug
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.diagnostic.trace
 import com.intellij.openapi.extensions.ExtensionPointName
@@ -68,6 +69,7 @@ private val LOG = logger<ProjectRootManagerComponent>()
 private val LOG_CACHES_UPDATE by lazy(LazyThreadSafetyMode.NONE) {
   ApplicationManager.getApplication().isInternal && !ApplicationManager.getApplication().isUnitTestMode
 }
+@Suppress("SSBasedInspection")
 private val WATCH_ROOTS_LOG = Logger.getInstance("#com.intellij.openapi.vfs.WatchRoots")
 private val WATCHED_ROOTS_PROVIDER_EP_NAME = ExtensionPointName<WatchedRootsProvider>("com.intellij.roots.watchedRootsProvider")
 
@@ -235,7 +237,7 @@ open class ProjectRootManagerComponent(
           // remote IJent VFPs may throw on deploy - don't fail project open (IJPL-245202)
           try {
             val watchRoots = readAction { collectWatchRoots(newDisposable) }
-            postCollect(newDisposable = newDisposable, oldDisposable = oldDisposable, watchRoots = watchRoots)
+            postCollect(newDisposable, oldDisposable, watchRoots)
           }
           catch (e: Throwable) {
             rethrowControlFlowException(e)
@@ -352,6 +354,9 @@ open class ProjectRootManagerComponent(
 
     collectCustomWorkspaceWatchRoots(recursivePaths, flatPaths)
 
+    removeExcludedWatchRoots(recursivePaths)
+    removeExcludedWatchRoots(flatPaths)
+
     return recursivePaths to flatPaths
   }
 
@@ -391,23 +396,37 @@ open class ProjectRootManagerComponent(
   }
 
   private fun collectCustomWorkspaceWatchRoots(recursivePaths: MutableSet<String>, flatPaths: MutableSet<String>) {
-    if (project.isInitialized) {
-      WorkspaceFileIndexEx.getInstance(project).visitFileSets { set, _ ->
-        set as WorkspaceFileSetWithCustomData<*>
+    val fileIndex = WorkspaceFileIndexEx.getInstance(project)
+    if (!fileIndex.isInitialized) {
+      WATCH_ROOTS_LOG.debug {
+        "Workspace File Index is not initialized, skip its roots for ${project.javaClass.name} " +
+        "(initialized=${project.isInitialized}, open=${project.isOpen})"
+      }
+      return
+    }
+    fileIndex.visitFileSets { set, _ ->
+      set as WorkspaceFileSetWithCustomData<*>
 
-        if (set.kind == WorkspaceFileKind.CUSTOM) return@visitFileSets
-        if (set.data is SkipAddingToWatchedRootsData) return@visitFileSets
+      if (set.kind == WorkspaceFileKind.CUSTOM) return@visitFileSets
+      if (set.data is SkipAddingToWatchedRootsData) return@visitFileSets
 
-        val paths = if (set.recursive) recursivePaths else flatPaths
-        val rootUrl = set.root.url
+      val paths = if (set.recursive) recursivePaths else flatPaths
+      val rootUrl = set.root.url
 
-        when (VirtualFileManager.extractProtocol(rootUrl)) {
-          null, StandardFileSystems.FILE_PROTOCOL, StandardFileSystems.JRT_PROTOCOL, StandardFileSystems.JAR_PROTOCOL -> {
-            WATCH_ROOTS_LOG.trace { "${set.root.path} from workspace file index (recursive=${set.recursive})" }
-            paths.add(extractLocalPath(rootUrl))
-          }
+      when (VirtualFileManager.extractProtocol(rootUrl)) {
+        null, StandardFileSystems.FILE_PROTOCOL, StandardFileSystems.JRT_PROTOCOL, StandardFileSystems.JAR_PROTOCOL -> {
+          WATCH_ROOTS_LOG.trace { "${set.root.path} from workspace file index (recursive=${set.recursive})" }
+          paths.add(extractLocalPath(rootUrl))
         }
       }
+    }
+  }
+
+  private fun removeExcludedWatchRoots(watchRootPaths: MutableSet<String>) {
+    val extensions = WatchRootExcludePolicy.EP_NAME.extensionList.filter { it.isApplicable(project) }
+    if (extensions.isEmpty()) return
+    watchRootPaths.removeIf { path ->
+      extensions.any { it.shouldExclude(path) }
     }
   }
 

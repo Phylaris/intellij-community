@@ -427,42 +427,6 @@ a:com.intellij.execution.executors.ExecutorGroup
 - pf:unregisterSettings(com.intellij.execution.executors.RunExecutorSettings):V
 f:com.intellij.execution.executors.ExecutorGroup$Companion
 - f:getGroupIfProxy(com.intellij.execution.Executor):com.intellij.execution.executors.ExecutorGroup
-e:com.intellij.execution.filters.Filter$NextAction
-- sf:CONTINUE_FILTERING:com.intellij.execution.filters.Filter$NextAction
-- sf:EXIT:com.intellij.execution.filters.Filter$NextAction
-- s:valueOf(java.lang.String):com.intellij.execution.filters.Filter$NextAction
-- s:values():com.intellij.execution.filters.Filter$NextAction[]
-c:com.intellij.execution.filters.Filter$Result
-- <init>(I,I,com.intellij.execution.filters.HyperlinkInfo):V
-- <init>(I,I,com.intellij.execution.filters.HyperlinkInfo,com.intellij.openapi.editor.markup.TextAttributes):V
-- <init>(I,I,com.intellij.execution.filters.HyperlinkInfo,com.intellij.openapi.editor.markup.TextAttributes,com.intellij.openapi.editor.markup.TextAttributes):V
-- <init>(I,I,com.intellij.execution.filters.HyperlinkInfo,Z):V
-- getHighlightAttributes():com.intellij.openapi.editor.markup.TextAttributes
-- getHighlightEndOffset():I
-- getHighlightStartOffset():I
-- getHyperlinkInfo():com.intellij.execution.filters.HyperlinkInfo
-- getNextAction():com.intellij.execution.filters.Filter$NextAction
-c:com.intellij.execution.filters.Filter$ResultItem
-- <init>(I,I,com.intellij.execution.filters.HyperlinkInfo):V
-- <init>(I,I,com.intellij.execution.filters.HyperlinkInfo,com.intellij.openapi.editor.markup.TextAttributes):V
-- <init>(I,I,com.intellij.execution.filters.HyperlinkInfo,com.intellij.openapi.editor.markup.TextAttributes,com.intellij.openapi.editor.markup.TextAttributes):V
-- <init>(I,I,com.intellij.execution.filters.HyperlinkInfo,Z):V
-- getHighlighterLayer():I
-a:com.intellij.execution.filters.TextConsoleBuilderFactory
-- <init>():V
-- a:createBuilder(com.intellij.openapi.project.Project,com.intellij.psi.search.GlobalSearchScope):com.intellij.execution.filters.TextConsoleBuilder
-f:com.intellij.execution.processTools.ExecutionResult
-- <init>(I,B[],B[]):V
-- f:getStdErr():B[]
-f:com.intellij.execution.processTools.ProcessExistedNotZeroException
-- java.lang.Exception
-- <init>(B[],I):V
-- f:getExitCode():I
-f:com.intellij.execution.processTools.ProcessExtKt
-- sf:getBareExecutionResult(java.lang.Process,kotlin.coroutines.Continuation):java.lang.Object
-- sf:getResultStdout(java.lang.Process,kotlin.coroutines.Continuation):java.lang.Object
-- sf:getResultStdoutStr(java.lang.Process,kotlin.coroutines.Continuation):java.lang.Object
-- sf:mapFlat(java.lang.Object,kotlin.jvm.functions.Function1):java.lang.Object
 a:com.intellij.execution.rmi.RemoteProcessSupport
 - sf:LOG:com.intellij.openapi.diagnostic.Logger
 - acquire(java.lang.Object,java.lang.Object,com.intellij.openapi.progress.ProgressIndicator):java.lang.Object
@@ -579,15 +543,6 @@ a:com.intellij.execution.runners.GenericProgramRunner
 - p:doExecute(com.intellij.openapi.project.Project,com.intellij.execution.configurations.RunProfileState,com.intellij.execution.ui.RunContentDescriptor,com.intellij.execution.runners.ExecutionEnvironment):com.intellij.execution.ui.RunContentDescriptor
 - p:execute(com.intellij.execution.runners.ExecutionEnvironment,com.intellij.execution.configurations.RunProfileState):V
 - p:execute(com.intellij.execution.runners.ExecutionEnvironment,com.intellij.execution.runners.ProgramRunner$Callback,com.intellij.execution.configurations.RunProfileState):V
-f:com.intellij.execution.runners.IndicatorIcon
-- <init>(javax.swing.Icon,I,I,java.awt.Color):V
-- f:getBase():javax.swing.Icon
-- f:getColor():java.awt.Color
-- f:getEmptyIconHeight():I
-- f:getEmptyIconWidth():I
-- getIconHeight():I
-- getIconWidth():I
-- paintIcon(java.awt.Component,java.awt.Graphics,I,I):V
 a:com.intellij.execution.target.BaseTargetEnvironmentRequest
 - com.intellij.execution.target.TargetEnvironmentRequest
 - <init>():V
@@ -1003,8 +958,6 @@ f:com.intellij.execution.target.value.TargetEnvironmentFunctions
 - sf:plus(java.util.function.Function,java.util.function.Function):java.util.function.Function
 - sf:toLinkedSetFunction(java.lang.Iterable):java.util.function.Function
 - sf:tryMapToSynchronizedVolume(java.util.List,java.nio.file.Path,com.intellij.execution.target.TargetPlatform):java.lang.String
-c:com.intellij.execution.ui.ConsoleViewPlace
-- sf:UNKNOWN:com.intellij.execution.ui.ConsoleViewPlace
 c:com.intellij.execution.ui.RunContentDescriptor
 - sf:CONTENT_TOOL_WINDOW_ID_KEY:com.intellij.openapi.util.Key
 - sf:DESCRIPTOR_KEY:com.intellij.openapi.util.Key
@@ -1088,7 +1041,6 @@ com.intellij.execution.ui.layout.ViewContext
 - com.intellij.openapi.Disposable
 - sf:CELL_POPUP_PLACE:java.lang.String
 - sf:CELL_TOOLBAR_PLACE:java.lang.String
-- sf:CONTENT_KEY:com.intellij.openapi.actionSystem.DataKey
 - sf:CONTEXT_KEY:com.intellij.openapi.actionSystem.DataKey
 - sf:TAB_POPUP_PLACE:java.lang.String
 - sf:TAB_TOOLBAR_PLACE:java.lang.String
@@ -1118,3 +1070,34 @@ f:com.intellij.openapi.actionSystem.ExecutionDataKeys
 f:com.intellij.psi.search.ExecutionSearchScopes
 - <init>():V
 - s:executionScope(com.intellij.openapi.project.Project,com.intellij.execution.configurations.RunProfile):com.intellij.psi.search.GlobalSearchScope
+c:com.intellij.task.ProjectTaskContext
+- <init>(java.lang.Object,com.intellij.execution.configurations.RunConfiguration):V
+- <init>(java.lang.Object,com.intellij.execution.configurations.RunConfiguration,Z):V
+- <init>(Z):V
+Fa:com.intellij.task.ProjectTaskManager
+- sf:EMPTY_TASKS_ARRAY:com.intellij.task.ProjectTask[]
+- <init>(com.intellij.openapi.project.Project):V
+- a:createAllModulesBuildTask(Z,com.intellij.openapi.project.Project):com.intellij.task.ProjectTask
+- a:createBuildTask(Z,com.intellij.openapi.roots.ProjectModelBuildableElement[]):com.intellij.task.ProjectTask
+- createModulesBuildTask(com.intellij.openapi.module.Module,Z,Z,Z):com.intellij.task.ProjectTask
+- createModulesBuildTask(com.intellij.openapi.module.Module[],Z,Z,Z):com.intellij.task.ProjectTask
+- a:createModulesBuildTask(com.intellij.openapi.module.Module[],Z,Z,Z,Z):com.intellij.task.ProjectTask
+- a:rebuild(com.intellij.openapi.roots.ProjectModelBuildableElement[]):org.jetbrains.concurrency.Promise
+- a:run(com.intellij.task.ProjectTaskContext,com.intellij.task.ProjectTask):org.jetbrains.concurrency.Promise
+c:com.intellij.task.ProjectTaskResult
+- <init>(Z,I,I):V
+- <init>(Z,I,I,java.util.Map):V
+- anyMatch(java.util.function.BiPredicate):Z
+- getAffectedModules(java.util.function.Predicate):java.util.List
+- getBuildableElements(java.lang.Class,java.util.function.Predicate):java.util.List
+- getTasks(java.util.function.BiPredicate):java.util.List
+- getTasksState():java.util.Map
+- getWarnings():I
+- isAborted():Z
+a:com.intellij.task.ProjectTaskRunner
+- sf:EP_NAME:com.intellij.openapi.extensions.ExtensionPointName
+- canRun(com.intellij.openapi.project.Project,com.intellij.task.ProjectTask):Z
+- canRun(com.intellij.openapi.project.Project,com.intellij.task.ProjectTask,com.intellij.task.ProjectTaskContext):Z
+- canRun(com.intellij.task.ProjectTask):Z
+- createExecutionEnvironment(com.intellij.openapi.project.Project,com.intellij.task.ExecuteRunConfigurationTask,com.intellij.execution.Executor):com.intellij.execution.runners.ExecutionEnvironment
+- run(com.intellij.openapi.project.Project,com.intellij.task.ProjectTaskContext,com.intellij.task.ProjectTask[]):org.jetbrains.concurrency.Promise

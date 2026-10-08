@@ -8,7 +8,10 @@ load(":dev_dist_content.bzl", "DevDistContentInfo")
 load(":dev_dist_plugin_descriptor.bzl", "DevDistPluginDescriptorInfo", "DevDistProductInfo", "dev_dist_plugin_descriptor", "dev_dist_plugin_descriptor_target_name", "dev_dist_product_info", "dev_dist_product_info_transition")
 load(":dev_plugin.bzl", "DevDistRuntimeLayoutInfo")
 load(":dev_plugin_remainder.bzl", "DevPluginArtifactCatalogueInfo", "DevPluginGraphInfo", "DevPluginRemainderInfo", "dev_dist_complex_plugin", "dev_dist_complex_plugin_variant", "dev_plugin_artifact_catalogue", "dev_plugin_component", "dev_plugin_file_graph", "dev_plugin_remainder_from_plan", "platform_values_error")
-load(":intellij_dev_dist.bzl", "IntellijDevFragmentInfo")
+load(":intellij_dev_dist.bzl", "DevDistPlacementInfo", "IntellijDevFragmentInfo")
+
+# The application info of the fixture product, an EAP product without a release date.
+_FIXTURE_APPLICATION_INFO = Label("//platform/build-scripts/bazel-rules:testdata/ApplicationInfo.xml")
 
 _EMPTY_JAR = "PK\005\006" + ("\000" * 18)
 
@@ -68,17 +71,17 @@ _file = rule(
 
 def _product_scoped_file_impl(ctx):
     product = ctx.attr._product_info[DevDistProductInfo]
-    if product.release_date != ctx.attr.release_date or product.release_version != ctx.attr.release_version:
-        fail("expected product info, got %s/%s" % (product.release_date, product.release_version))
+    application_info = str(product.application_info.owner) if product.application_info != None else None
+    if application_info != ctx.attr.application_info:
+        fail("expected product info, got the application info %s" % application_info)
     output = ctx.actions.declare_file(ctx.label.name + ".xml")
-    ctx.actions.write(output, product.release_date + "/" + product.release_version + "\n")
+    ctx.actions.write(output, application_info + "\n")
     return [DefaultInfo(files = depset([output]))]
 
 _product_scoped_file = rule(
     implementation = _product_scoped_file_impl,
     attrs = {
-        "release_date": attr.string(mandatory = True),
-        "release_version": attr.string(mandatory = True),
+        "application_info": attr.string(mandatory = True, doc = "The label of the application info that the product states."),
         "_product_info": attr.label(
             default = Label("//build:dev_dist_product_info"),
             providers = [DevDistProductInfo],
@@ -309,6 +312,14 @@ _expected_failure_test = analysistest.make(
     attrs = {"expected_message": attr.string(mandatory = True)},
 )
 
+# The same check for a target that reads the product, such as a remainder.
+_expected_product_failure_test = analysistest.make(
+    _expected_failure_test_impl,
+    expect_failure = True,
+    config_settings = _PRODUCT_CONFIG,
+    attrs = {"expected_message": attr.string(mandatory = True)},
+)
+
 def _component_test_impl(ctx):
     env = analysistest.begin(ctx)
     target = analysistest.target_under_test(env)
@@ -318,7 +329,12 @@ def _component_test_impl(ctx):
     asserts.equals(env, 1, len(actions))
     action = actions[0]
     asserts.equals(env, ctx.attr.kind, fragment.name)
-    asserts.equals(env, _short_paths([remainder.directory]), _short_paths(fragment.payload.to_list()))
+    asserts.equals(env, _short_paths(remainder.outputs.values()), _short_paths(fragment.payload.to_list()))
+
+    # A remainder without a reused jar places each of its outputs at its own destination.
+    placement = target[DevDistPlacementInfo]
+    asserts.equals(env, {"plugins/test/" + key: value.short_path for key, value in remainder.outputs.items()}, {key: value.short_path for key, value in placement.files.items()})
+    asserts.equals(env, {}, placement.trees)
     for input_file in [remainder.metadata, remainder.assets, remainder.classpath]:
         asserts.true(env, input_file.short_path in _short_paths(action.inputs.to_list()))
     asserts.true(env, "--kind=" + ctx.attr.kind in action.argv)
@@ -430,7 +446,10 @@ def _remainder_from_plan_test_impl(ctx):
     action = actions[0]
     asserts.equals(env, ctx.attr.graph[0].label, remainder.graph.label)
     asserts.equals(env, graph.execution_version, remainder.execution_version)
-    asserts.true(env, remainder.directory.is_directory)
+    asserts.equals(env, ["lib/test.jar"], remainder.outputs.keys())
+    asserts.false(env, remainder.outputs["lib/test.jar"].is_directory)
+    asserts.equals(env, remainder.metadata.dirname + "/" + target.label.name + ".plugin", remainder.root)
+    asserts.equals(env, remainder.root + "/lib/test.jar", remainder.outputs["lib/test.jar"].path)
     asserts.equals(env, [], remainder.independent_artifacts.to_list())
     packer = action.argv[0]
     asserts.true(env, packer.split("/")[-1].startswith("plugin-remainder-packer"))
@@ -440,19 +459,19 @@ def _remainder_from_plan_test_impl(ctx):
     inputs = [file for file in action.inputs.to_list() if not file.path.startswith(packer)]
     asserts.equals(env, sorted(_short_paths(expected_inputs)), sorted(_short_paths(inputs)))
     input_by_short_path = {file.short_path: file for file in inputs}
-    asserts.equals(env, [remainder.directory, remainder.metadata, remainder.assets, remainder.classpath], action.outputs.to_list())
+    asserts.equals(env, remainder.outputs.values() + [remainder.metadata, remainder.assets, remainder.classpath], action.outputs.to_list())
     asserts.equals(env, [
         "--projection=" + input_by_short_path[graph.projection.short_path].path,
         "--input-catalogue=" + input_by_short_path[catalogue.catalogue.short_path].path,
         "--classpath-descriptor=" + input_by_short_path[classpath_descriptor.short_path].path,
         "--plugin-directory=plugins/test",
         "--execution-version=%d" % graph.execution_version,
-        "--output-dir=" + remainder.directory.path,
+        "--output-dir=" + remainder.root,
         "--inventory=" + remainder.metadata.path,
         "--assets=" + remainder.assets.path,
         "--classpath=" + remainder.classpath.path,
     ], action.argv[1:])
-    asserts.equals(env, [remainder.directory], target[DefaultInfo].files.to_list())
+    asserts.equals(env, remainder.outputs.values(), target[DefaultInfo].files.to_list())
 
     # The layout part comes from the same plan file and catalogue, in an action of its own that reads no packed byte.
     layout = target[DevDistRuntimeLayoutInfo]
@@ -474,7 +493,7 @@ def _remainder_from_plan_test_impl(ctx):
     ], layout_action.argv[1:])
 
     groups = target[OutputGroupInfo]
-    asserts.equals(env, [remainder.directory], groups.dev_dist_plugin_remainder.to_list())
+    asserts.equals(env, remainder.outputs.values(), groups.dev_dist_plugin_remainder.to_list())
     asserts.equals(env, [remainder.metadata], groups.file_metadata.to_list())
     asserts.equals(env, [remainder.assets], groups.dev_dist_plugin_assets.to_list())
     asserts.equals(env, [remainder.classpath], groups.dev_dist_plugin_classpath.to_list())
@@ -539,53 +558,65 @@ def _check_chain_shape(chain, component_visibility = ["//visibility:public"]):
     if visibility != component_visibility:
         fail("chain %s declares %s_component with the visibility %s; expected %s" % (chain, chain, visibility, component_visibility))
 
-def _plan(variant, layout_signature, destination):
-    """The plan file of a fixture: one jar packed from a module-filter operation over the raw input. An analysis test
+def _plan(variant, destination):
+    """The plan file of a fixture: one jar packed from a layout-assets operation over the raw input. An analysis test
     runs no action, so the packer never reads it. The content states what the chain would pack."""
     return json.encode({
         "version": 1,
         "plugin": "test.plugin",
         "variant": variant,
-        "layoutSignature": layout_signature,
         "assets": [{
             "destination": destination,
             "recipe": {
                 "sources": [
-                    {"input": "module-filter:raw:output", "kind": "prepared", "filter": "prepared"},
+                    {"input": "layout-assets:raw:output", "kind": "prepared", "filter": "prepared"},
                     {"input": "descriptor", "kind": "file", "filter": "none", "entry": "META-INF/plugin.xml", "options": ["patch"]},
                 ],
                 "writer": {"manifest": "drop", "mergeEntities": True},
             },
         }],
-        "preparations": [{"id": "module-filter:raw", "inputs": ["raw"], "outputs": ["module-filter:raw:output"], "modelSignature": "0" * 64}],
-        "operations": [{"id": "module-filter:raw", "input": {"artifact": "raw"}, "output": "module-filter:raw:output", "manifest": "keep", "excludes": ["drop/**"]}],
+        "preparations": [{"id": "layout-assets:raw", "inputs": ["raw"], "outputs": ["layout-assets:raw:output"], "modelSignature": "0" * 64}],
+        "operations": [{
+            "id": "layout-assets:raw",
+            "kind": "layout-assets",
+            "inputs": [{"artifact": "raw"}],
+            "output": "layout-assets:raw:output",
+            "manifest": "keep",
+            "layoutAssets": {"format": "entries", "assets": [{"destination": "", "sources": [0]}]},
+        }],
     }) + "\n"
 
-_PLAN = _plan("", "0" * 64, "lib/test.jar")
+_PLAN = _plan("", "lib/test.jar")
 
-# The folded form of the same plan: the variant is the chain's platform, and the two leaves that differ per platform
-# are slots. The graph of each chain resolves them from the call's `platform_values`.
-_FOLDED_PLAN = _plan("{platform}", "{platform:layoutSignature}", "{platform:destination}")
+# The folded form of the same plan: the variant is the chain's platform, and the leaf that differs per platform is a
+# slot. The graph of each chain resolves it from the call's `platform_values`.
+_FOLDED_PLAN = _plan("{platform}", "{platform:destination}")
+
+# A folded plan without a slot: only the variant differs per platform. The call states neither `platform_values` nor
+# `platform_plans`.
+_ZERO_SLOT_PLAN = _plan("{platform}", "lib/test.jar")
 
 def _check_platform_values_refusals(main_module):
     """Fails at load time when `platform_values_error` accepts a shape or a value the macro must refuse, or refuses a
-    dict that fits its platforms."""
+    call that fits its platforms."""
     platforms = ["linux_x64", "darwin_aarch64"]
-    values = {"linux_x64": {"layoutSignature": "1" * 64}, "darwin_aarch64": {"layoutSignature": "2" * 64}}
-    for call_platforms, platform_values, expected in [
-        (None, values, "platform_values without platforms"),
-        (["linux_x64"], values, "but its platforms are"),
-        (platforms, {"linux_x64": {"layoutSignature": "1" * 64}, "darwin_aarch64": {"destination": "lib/test.jar"}}, "states the slots"),
-        (platforms, {"linux_x64": {"layoutSignature": 'a"b'}, "darwin_aarch64": {"layoutSignature": "b"}}, "needs JSON escaping"),
-        (platforms, {"linux_x64": {"layoutSignature": "{platform}"}, "darwin_aarch64": {"layoutSignature": "b"}}, "holds a token"),
+    values = {"linux_x64": {"destination": "lib/linux"}, "darwin_aarch64": {"destination": "lib/darwin"}}
+    for call_platforms, platform_values, platform_plans, expected in [
+        (None, values, False, "platform_values without platforms"),
+        (["linux_x64"], values, False, "but its platforms are"),
+        (platforms, {"linux_x64": {"destination": "lib/linux"}, "darwin_aarch64": {"pattern": "libx"}}, False, "states the slots"),
+        (platforms, {"linux_x64": {"destination": 'a"b'}, "darwin_aarch64": {"destination": "b"}}, False, "needs JSON escaping"),
+        (platforms, {"linux_x64": {"destination": "{platform}"}, "darwin_aarch64": {"destination": "b"}}, False, "holds a token"),
+        (None, {}, True, "platform_plans without platforms"),
+        (platforms, values, True, "states platform_values and platform_plans"),
     ]:
-        error = platform_values_error(main_module, call_platforms, platform_values)
+        error = platform_values_error(main_module, call_platforms, platform_values, platform_plans)
         if error == None or expected not in error:
-            fail("platform_values_error accepted %s with platforms %s: %s" % (platform_values, call_platforms, error))
-    for accepted in [{}, values]:
-        error = platform_values_error(main_module, platforms, accepted)
+            fail("platform_values_error accepted %s and platform_plans %s with platforms %s: %s" % (platform_values, platform_plans, call_platforms, error))
+    for accepted, platform_plans in [({}, False), (values, False), ({}, True)]:
+        error = platform_values_error(main_module, platforms, accepted, platform_plans)
         if error != None:
-            fail("platform_values_error refused %s: %s" % (accepted, error))
+            fail("platform_values_error refused %s and platform_plans %s: %s" % (accepted, platform_plans, error))
 
 def _reused_component_test_impl(ctx):
     env = analysistest.begin(ctx)
@@ -600,8 +631,19 @@ def _reused_component_test_impl(ctx):
     # jar reaches the payload beside the remainder.
     payload = fragment.payload.to_list()
     asserts.equals(env, 2, len(payload))
-    asserts.true(env, remainder.directory.short_path in _short_paths(payload))
+    asserts.true(env, remainder.outputs["lib/test.jar"].short_path in _short_paths(payload))
     asserts.true(env, content.jar.short_path in [file.short_path for file in payload])
+
+    # The reused jar is placed at `lib/modules/<module>.jar` beside the remainder output, so no file is cloned.
+    placement = target[DevDistPlacementInfo]
+    asserts.equals(
+        env,
+        {
+            "plugins/test/lib/test.jar": remainder.outputs["lib/test.jar"].short_path,
+            "plugins/test/lib/modules/%s.jar" % content.module_name: content.jar.short_path,
+        },
+        {key: value.short_path for key, value in placement.files.items()},
+    )
     asserts.equals(env, [content.jar.short_path], [file.short_path for file in remainder.independent_artifacts.to_list()])
 
     # The module name is the key of the reused jar: the component writes it as the artifact of the collection row.
@@ -651,6 +693,56 @@ _reused_remainder_test = analysistest.make(
     attrs = {"content_jar": attr.label(mandatory = True, providers = [ContentModuleJarInfo])},
 )
 
+def _remainder_outputs_test_impl(ctx):
+    """The remainder declares one file per file asset and one directory per outermost tree asset, below its root."""
+    env = analysistest.begin(ctx)
+    target = analysistest.target_under_test(env)
+    remainder = target[DevPluginRemainderInfo]
+    asserts.equals(env, sorted(ctx.attr.files), sorted([key for key, file in remainder.outputs.items() if not file.is_directory]))
+    asserts.equals(env, sorted(ctx.attr.trees), sorted([key for key, file in remainder.outputs.items() if file.is_directory]))
+    asserts.equals(env, ctx.attr.executables, remainder.executables)
+    for key, file in remainder.outputs.items():
+        asserts.equals(env, remainder.root + ("/" + key if key else ""), file.path)
+    actions = [action for action in analysistest.target_actions(env) if action.mnemonic == "PackDevPluginRemainder"]
+    asserts.equals(env, 1, len(actions))
+    asserts.equals(env, remainder.outputs.values() + [remainder.metadata, remainder.assets, remainder.classpath], actions[0].outputs.to_list())
+    return analysistest.end(env)
+
+_REMAINDER_OUTPUTS_ATTRS = {
+    "files": attr.string_list(doc = "The file destinations the remainder declares."),
+    "trees": attr.string_list(doc = "The tree destinations the remainder declares."),
+    "executables": attr.string_list(doc = "The declared files with the executable bit."),
+}
+
+_remainder_outputs_test = analysistest.make(_remainder_outputs_test_impl, config_settings = _PRODUCT_CONFIG, attrs = _REMAINDER_OUTPUTS_ATTRS)
+
+# The product of the refusal case: its mode is `frontend`, so a descriptor that refuses a module for that mode omits it.
+_FRONTEND_PRODUCT_CONFIG = {str(Label("//build:dev_dist_product_info")): str(Label(_PACKAGE + ":" + _SUITE + "_frontend_product_info"))}
+
+_refused_remainder_outputs_test = analysistest.make(_remainder_outputs_test_impl, config_settings = _FRONTEND_PRODUCT_CONFIG, attrs = _REMAINDER_OUTPUTS_ATTRS)
+
+def _placement_test_impl(ctx):
+    """A component places the remainder outputs and the reused jars at their destinations, or states no placement."""
+    env = analysistest.begin(ctx)
+    target = analysistest.target_under_test(env)
+    if not ctx.attr.placed:
+        asserts.false(env, DevDistPlacementInfo in target)
+        return analysistest.end(env)
+    placement = target[DevDistPlacementInfo]
+    asserts.equals(env, sorted(ctx.attr.files), sorted(placement.files.keys()))
+    asserts.equals(env, sorted(ctx.attr.trees), sorted(placement.trees.keys()))
+    return analysistest.end(env)
+
+_placement_test = analysistest.make(
+    _placement_test_impl,
+    config_settings = _PRODUCT_CONFIG,
+    attrs = {
+        "placed": attr.bool(default = True, doc = "Whether the component states a placement."),
+        "files": attr.string_list(doc = "The placed file destinations."),
+        "trees": attr.string_list(doc = "The placed tree destinations."),
+    },
+)
+
 def dev_plugin_remainder_test_suite(name):
     """Declares the focused generated-component tests.
 
@@ -666,33 +758,27 @@ def dev_plugin_remainder_test_suite(name):
     for target in [projection, raw]:
         _file(name = target)
     product_info = name + "_product_info"
-    release_date = "20260101"
-    release_version = "2026300"
     dev_dist_product_info(
         name = product_info,
-        release_date = release_date,
-        release_version = release_version,
+        application_info = _FIXTURE_APPLICATION_INFO,
         platform_prefix = "idea",
     )
     _product_scoped_file(
         name = descriptor_source,
-        release_date = release_date,
-        release_version = release_version,
+        application_info = str(_FIXTURE_APPLICATION_INFO),
         tags = ["manual"],
     )
     normal_main_module = "test.%s.normal" % name
     normal_descriptor = dev_dist_plugin_descriptor_target_name(normal_main_module)
     dev_dist_plugin_descriptor(
         main_module = normal_main_module,
-        descriptor_module = ":" + descriptor_source,
-        descriptor = descriptor_source,
+        descriptor = ":" + descriptor_source,
     )
     scrambled_main_module = "test.%s.scrambled" % name
     scrambled_descriptor = dev_dist_plugin_descriptor_target_name(scrambled_main_module)
     dev_dist_plugin_descriptor(
         main_module = scrambled_main_module,
-        descriptor_module = ":" + descriptor_source,
-        descriptor = descriptor_source,
+        descriptor = ":" + descriptor_source,
         embed_content_modules = False,
     )
 
@@ -914,6 +1000,7 @@ def dev_plugin_remainder_test_suite(name):
             artifact_catalogue = ":" + catalogue,
             descriptor = ":" + descriptor,
             plugin_directory = "plugins/test",
+            remainder_files = {"lib/test.jar": []},
             tags = ["manual"],
         )
         remainder_test = remainder + "_test"
@@ -930,6 +1017,106 @@ def dev_plugin_remainder_test_suite(name):
         )
 
     remainder = remainders["normal"]
+
+    # The declared outputs. A tree holds the assets below it, so only the outermost tree and the files outside a tree
+    # are outputs. A tree at the plugin root is the root itself. A file whose every module the mode refuses is omitted.
+    outputs_tests = []
+    frontend_product_info = name + "_frontend_product_info"
+    dev_dist_product_info(
+        name = frontend_product_info,
+        application_info = _FIXTURE_APPLICATION_INFO,
+        platform_prefix = "idea",
+        mode = "frontend",
+    )
+    refusing_main_module = "test.%s.refusing" % name
+    refusing_descriptor = dev_dist_plugin_descriptor_target_name(refusing_main_module)
+    dev_dist_plugin_descriptor(
+        main_module = refusing_main_module,
+        descriptor = ":" + descriptor_source,
+        mode_refused_content_modules = {"frontend": ["test.refused"]},
+    )
+    for suffix, test_rule, descriptor, arguments, expected in [
+        (
+            "nested",
+            _remainder_outputs_test,
+            normal_descriptor,
+            {
+                "remainder_files": {
+                    "lib/test.jar": ["test.kept"],
+                    "lib/server/server.jar": [],
+                    "lib/run.sh": [],
+                    "bin/tool": [],
+                    "bin/helpers/helper.py": [],
+                },
+                "remainder_trees": ["lib/server", "bin", "bin/helpers"],
+                "remainder_executables": ["lib/run.sh", "bin/tool"],
+            },
+            struct(files = ["lib/run.sh", "lib/test.jar"], trees = ["bin", "lib/server"], executables = ["lib/run.sh"]),
+        ),
+        (
+            "root_tree",
+            _remainder_outputs_test,
+            normal_descriptor,
+            {"remainder_files": {"lib/test.jar": []}, "remainder_trees": ["", "lib/native"]},
+            struct(files = [], trees = [""], executables = []),
+        ),
+        (
+            "refused",
+            _refused_remainder_outputs_test,
+            refusing_descriptor,
+            {"remainder_files": {
+                "lib/test.jar": [],
+                "lib/modules/test.refused.jar": ["test.refused"],
+                "lib/mixed.jar": ["test.refused", "test.kept"],
+            }},
+            struct(files = ["lib/mixed.jar", "lib/test.jar"], trees = [], executables = []),
+        ),
+    ]:
+        outputs_remainder = name + "_outputs_" + suffix + "_remainder"
+        dev_plugin_remainder_from_plan(
+            name = outputs_remainder,
+            graph = ":" + plan_graph,
+            artifact_catalogue = ":" + name + "_normal_catalogue",
+            descriptor = ":" + descriptor,
+            plugin_directory = "plugins/test",
+            tags = ["manual"],
+            **arguments
+        )
+        outputs_test = outputs_remainder + "_test"
+        test_rule(
+            name = outputs_test,
+            target_under_test = ":" + outputs_remainder,
+            files = expected.files,
+            trees = expected.trees,
+            executables = expected.executables,
+        )
+        outputs_tests.append(outputs_test)
+    for suffix, arguments in [
+        ("tree_and_file", {"remainder_files": {"lib": []}, "remainder_trees": ["lib"]}),
+        ("unsafe", {"remainder_files": {"../lib/test.jar": []}}),
+        ("executable_tree", {"remainder_trees": ["bin"], "remainder_executables": ["bin"]}),
+    ]:
+        refused_remainder = name + "_outputs_" + suffix + "_remainder"
+        dev_plugin_remainder_from_plan(
+            name = refused_remainder,
+            graph = ":" + plan_graph,
+            artifact_catalogue = ":" + name + "_normal_catalogue",
+            descriptor = ":" + normal_descriptor,
+            plugin_directory = "plugins/test",
+            tags = ["manual"],
+            **arguments
+        )
+        refused_test = refused_remainder + "_test"
+        _expected_product_failure_test(
+            name = refused_test,
+            target_under_test = ":" + refused_remainder,
+            expected_message = {
+                "tree_and_file": "is a file asset and a tree asset",
+                "unsafe": "is no safe destination",
+                "executable_tree": "is no file asset",
+            }[suffix],
+        )
+        outputs_tests.append(refused_test)
 
     component = name + "_component"
     dev_plugin_component(
@@ -983,6 +1170,7 @@ def dev_plugin_remainder_test_suite(name):
             ":" + raw: "raw",
         },
         independent_artifacts = [":" + content_jar],
+        remainder_files = {"lib/test.jar": []},
         tags = ["manual"],
         visibility = ["//visibility:private"],
     )
@@ -1010,7 +1198,46 @@ def dev_plugin_remainder_test_suite(name):
         content_jar = ":" + content_jar,
     )
 
-    # A chain over a plan file with a module-filter operation. The packer executes the operation in the remainder
+    # A reused jar outside `lib/modules/<module>.jar` states its destination. A reused jar below a remainder tree has
+    # no placement, because a runfiles tree cannot write below a linked directory.
+    placement_tests = []
+    member_module = "test.%s.member" % name
+    for suffix, arguments, expected in [
+        (
+            "moved",
+            {"remainder_trees": ["lib/native"], "independent_destinations": {member_module: "lib/member.jar"}},
+            struct(placed = True, files = ["plugins/test/lib/member.jar"], trees = ["plugins/test/lib/native"]),
+        ),
+        ("below_tree", {"remainder_trees": ["lib"]}, struct(placed = False, files = [], trees = [])),
+    ]:
+        placement_chain = complex + "_" + suffix
+        dev_dist_complex_plugin_variant(
+            name = placement_chain,
+            projection = ":" + projection,
+            execution_version = 2,
+            descriptor = ":" + normal_descriptor,
+            plugin_directory = "plugins/test",
+            component_name = "plugin-test",
+            target_platform = "linux_x64",
+            resource_inputs = {
+                ":" + normal_descriptor: "descriptor",
+                ":" + raw: "raw",
+            },
+            independent_artifacts = [":" + content_jar],
+            tags = ["manual"],
+            **arguments
+        )
+        placement_test = placement_chain + "_placement_test"
+        _placement_test(
+            name = placement_test,
+            target_under_test = ":" + placement_chain + "_component",
+            placed = expected.placed,
+            files = expected.files,
+            trees = expected.trees,
+        )
+        placement_tests.append(placement_test)
+
+    # A chain over a plan file with a layout-assets operation. The packer executes the operation in the remainder
     # action. The same action writes the asset table and the classpath record the component reads.
     plan_chain = name + "_plan_chain"
     dev_dist_complex_plugin_variant(
@@ -1025,6 +1252,7 @@ def dev_plugin_remainder_test_suite(name):
             ":" + normal_descriptor: "descriptor",
             ":" + raw: "raw",
         },
+        remainder_files = {"lib/test.jar": []},
         tags = ["manual"],
     )
     _check_chain_shape(plan_chain)
@@ -1056,6 +1284,7 @@ def dev_plugin_remainder_test_suite(name):
 
     # The derived form: one call, one chain per platform, the plan label `<main module>.<platform>.dev-plan.json` in
     # the package of the call and the descriptor entry derived, and the platform token substituted in a label.
+    # `platform_plans` states that the call keeps a plan file per platform.
     derived_module = "test.%s.derived" % name
     derived_platforms = ["linux_x64", "darwin_aarch64"]
     for platform in derived_platforms:
@@ -1066,6 +1295,7 @@ def dev_plugin_remainder_test_suite(name):
         descriptor = ":" + normal_descriptor,
         execution_version = 1,
         platforms = derived_platforms,
+        platform_plans = True,
         resource_inputs = {":" + name + "_derived_raw_{platform}": "raw"},
     )
     derived_tests = []
@@ -1107,6 +1337,7 @@ def dev_plugin_remainder_test_suite(name):
         descriptor = ":" + normal_descriptor,
         execution_version = 1,
         platforms = ["linux_x64"],
+        platform_plans = True,
         resource_inputs = {":" + plan_home_raw: "raw"},
         tags = ["manual"],
     )
@@ -1127,8 +1358,8 @@ def dev_plugin_remainder_test_suite(name):
     folded_module = "test.%s.folded" % name
     folded_platforms = ["linux_x64", "darwin_aarch64"]
     folded_values = {
-        "linux_x64": {"destination": "lib/linux-x64/test.jar", "layoutSignature": "1" * 64},
-        "darwin_aarch64": {"destination": "lib/darwin-aarch64/test.jar", "layoutSignature": "2" * 64},
+        "linux_x64": {"destination": "lib/linux-x64/test.jar"},
+        "darwin_aarch64": {"destination": "lib/darwin-aarch64/test.jar"},
     }
     _check_platform_values_refusals(folded_module)
     folded_projection = folded_module + ".dev-plan.json"
@@ -1160,6 +1391,35 @@ def dev_plugin_remainder_test_suite(name):
         )
         folded_tests.append(folded_test)
 
+    # The folded form without a slot: the call states neither `platform_values` nor `platform_plans`, so every chain
+    # reads `<main module>.dev-plan.json`, and its graph substitutes the platform token alone.
+    zero_slot_module = "test.%s.zero_slot" % name
+    zero_slot_projection = zero_slot_module + ".dev-plan.json"
+    _file(name = zero_slot_projection, content = _ZERO_SLOT_PLAN)
+    for platform in folded_platforms:
+        _file(name = name + "_zero_slot_raw_" + platform)
+    dev_dist_complex_plugin(
+        main_module = zero_slot_module,
+        descriptor = ":" + normal_descriptor,
+        execution_version = 1,
+        platforms = folded_platforms,
+        resource_inputs = {":" + name + "_zero_slot_raw_{platform}": "raw"},
+        tags = ["manual"],
+    )
+    for platform in folded_platforms:
+        stem = zero_slot_module + "_" + platform
+        _check_chain_shape(stem)
+        zero_slot_test = stem + "_graph_test"
+        _graph_resolution_test(
+            name = zero_slot_test,
+            target_under_test = ":" + stem + "_graph",
+            projection = ":" + zero_slot_projection,
+            platform = platform,
+            execution_version = 1,
+            consumer = ":" + stem + "_remainder",
+        )
+        folded_tests.append(zero_slot_test)
+
     # The plan class: `plan_class` names a plan text that differs from the baseline text, `<main module>.<plan_class>`,
     # before the platform of a refused fold and alone for a folded plan. The descriptor entry stays
     # `descriptor:<main module>`, and the chain stem does not change.
@@ -1174,6 +1434,7 @@ def dev_plugin_remainder_test_suite(name):
         descriptor = ":" + normal_descriptor,
         execution_version = 1,
         platforms = class_platforms,
+        platform_plans = True,
         resource_inputs = {":" + name + "_plan_class_raw_{platform}": "raw"},
         tags = ["manual"],
     )
@@ -1246,6 +1507,7 @@ def dev_plugin_remainder_test_suite(name):
         descriptor = ":" + normal_descriptor,
         execution_version = 1,
         platforms = chain_class_platforms,
+        platform_plans = True,
         resource_inputs = {":" + name + "_chain_class_raw_{platform}": "raw"},
         tags = ["manual"],
     )
@@ -1275,7 +1537,7 @@ def dev_plugin_remainder_test_suite(name):
     # JSON string leaf.
     refused_graph_tests = []
     for suffix, platform, platform_values, expected_message in [
-        ("neutral_values", "", {"layoutSignature": "0" * 64}, "serves every platform"),
+        ("neutral_values", "", {"destination": "lib/test.jar"}, "serves every platform"),
         ("quoted_value", "linux_x64", {"destination": 'lib/"test".jar'}, "needs JSON escaping"),
         ("token_value", "linux_x64", {"destination": "lib/{platform}/test.jar"}, "holds a token"),
     ]:
@@ -1307,7 +1569,7 @@ def dev_plugin_remainder_test_suite(name):
         ] + optional_source_tree_tests + [
             library_catalogue_test,
             unsafe_source_tree_graph_test,
-        ] + remainder_tests + [
+        ] + remainder_tests + outputs_tests + placement_tests + [
             component_test,
             neutral_component_test,
             complex_graph_test,

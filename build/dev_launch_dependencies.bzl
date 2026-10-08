@@ -13,7 +13,7 @@ it, and refetching means re-downloading hundreds of megabytes. The extension rea
 hands each group of artifacts a repository whose attributes carry only its own version, so a bump
 refetches exactly what it changed.
 
-A repository is per platform only where the artifact is: the JBR, JCEF, the Chatter binary and the
+A repository is per platform only where the artifact is: the JBR, JCEF, pyrefly, the Chatter binary and the
 Toolbox daemon are, while IJent, libwebp, libghostty-vt, the restart helper and the bundled Maven
 distribution ship every platform in one archive and are fetched once for all six.
 
@@ -135,6 +135,29 @@ _JSERIALCOMM_NATIVE_HASH = "9a7813435b79aa2e23c7f2a78f1b66b48c0504c4"
 def jserialcomm_url():
     return "https://packages.jetbrains.team/files/p/ij/intellij-build-dependencies/jSerialComm/%s/jSerialComm.zip" % _JSERIALCOMM_NATIVE_HASH
 
+# OsFamily.osName
+_PYREFLY_OS_NAMES = {
+    "darwin": "macOS",
+    "linux": "Linux",
+    "windows": "Windows",
+}
+
+# JvmArchitecture.archName
+_PYREFLY_ARCH_NAMES = {
+    "aarch64": "AArch64",
+    "x64": "X86_64",
+}
+
+def pyrefly_platform_directory(platform):
+    """`pyreflyPlatformDirName`: the directory of the binary in the archive and in the plugin, such as `macOS-AArch64`."""
+    parts = platform_parts(platform)
+    return "%s-%s" % (_PYREFLY_OS_NAMES[parts.os], _PYREFLY_ARCH_NAMES[parts.arch])
+
+# downloadPyrefly - `platform` is a [HOST_PLATFORMS] entry, or `None` for the license report archive
+def pyrefly_url(platform, version):
+    artifact = "pyrefly-" + (pyrefly_platform_directory(platform).lower() if platform else "license")
+    return maven_url(INTELLIJ_DEPENDENCIES_URL, "org.jetbrains.intellij.deps", artifact, version, "tar.gz")
+
 def _file_name(url):
     name = url.rpartition("/")[2]
     if not name or "?" in name or "#" in name:
@@ -180,13 +203,13 @@ def _extracted_repo_impl(repository_ctx):
         "BUILD",
         """
 package(default_visibility = ["//visibility:public"])
-files = glob(["**"], exclude = ["BUILD", "BUILD.bazel"], allow_empty = False)
+files = glob(["**"], exclude = %s, allow_empty = False)
 exports_files(files)
 filegroup(
     name = "files",
     srcs = files,
 )
-""",
+""" % repr(["BUILD", "BUILD.bazel"] + repository_ctx.attr.excludes),
     )
     return repository_ctx.repo_metadata(reproducible = bool(repository_ctx.attr.sha256) or bool(result.sha256))
 
@@ -197,11 +220,14 @@ dev_launch_extracted_repo = repository_rule(
     downloader reads it from there. Extraction stayed behind, in `<communityRoot>/build/download` - a cache in the
     checkout, which a build reading a shared read-only project tree cannot write, and which no action declares. So an
     archive whose *contents* the assembly reads is extracted here, the same way `bun` is (see the ultimate MODULE.bazel),
-    and the consumer is handed files rather than a directory it has to populate.
+    and the consumer is handed files rather than a directory it has to populate. The `excludes` globs drop the junk
+    entries an archive carries, such as `.DS_Store`.
     """,
     implementation = _extracted_repo_impl,
     environ = [DEFAULT_CANONICAL_ID_ENV],
     attrs = {
+        # globs of the extracted files that the `files` filegroup leaves out, beside the BUILD files
+        "excludes": attr.string_list(),
         # optional, exactly as in dev_launch_deps_repo: these URLs carry their version, so the same URL is the same
         # artifact and an unpinned fetch costs a re-download only when the version moves
         "sha256": attr.string(),
@@ -433,6 +459,20 @@ def _dev_launch_deps_community_impl(module_ctx):
             pinned(community, _COMMUNITY_DEPENDENCIES, "bundledMavenTelemetryLibraries"),
         ),
     )
+
+    # downloadPyrefly - one archive per platform holds `<os>-<arch>/pyrefly`, and one archive holds the `license` tree.
+    # The Python community plugin layout copies files of the unpacked archives, so each archive is an extracted
+    # repository alone.
+    pyrefly_build = pinned(community, _COMMUNITY_DEPENDENCIES, "pyreflyBuild")
+    dev_launch_extracted_repo(
+        name = "dev_launch_pyrefly_license_extracted",
+        url = pyrefly_url(None, pyrefly_build),
+    )
+    for platform in HOST_PLATFORMS:
+        dev_launch_extracted_repo(
+            name = "dev_launch_%s_pyrefly_extracted" % platform,
+            url = pyrefly_url(platform, pyrefly_build),
+        )
 
     jcef_build = pinned(community, _COMMUNITY_DEPENDENCIES, "jcefBuild")
     runtime_build = pinned(community, _COMMUNITY_DEPENDENCIES, "runtimeBuild")

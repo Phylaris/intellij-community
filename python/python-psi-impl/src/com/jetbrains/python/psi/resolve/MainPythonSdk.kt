@@ -1,10 +1,9 @@
 // Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.jetbrains.python.psi.resolve
 
-import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.projectRoots.Sdk
-import com.intellij.python.pyproject.model.evolution.EvoPyProjectModel
+import com.intellij.python.pyproject.model.evolution.findMainEvoPyProjectIfReady
 import com.intellij.python.sdk.backend.getSdkAPI
 
 /**
@@ -18,4 +17,4 @@ import com.intellij.python.sdk.backend.getSdkAPI
  * [com.intellij.python.pyproject.model.evolution.findMainPythonInterpreter], which waits.
  */
 @Suppress("DEPRECATION")
-internal fun Project.mainPythonSdk(): Sdk? = service<EvoPyProjectModel>().snapshotOrNull()?.main?.interpreter?.getSdkAPI()
+internal fun Project.mainPythonSdk(): Sdk? = findMainEvoPyProjectIfReady()?.interpreter?.getSdkAPI()

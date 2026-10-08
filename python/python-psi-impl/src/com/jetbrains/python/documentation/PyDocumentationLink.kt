@@ -36,7 +36,7 @@ import com.jetbrains.python.psi.PyUtil
 import com.jetbrains.python.psi.types.PyClassLikeType
 import com.jetbrains.python.psi.types.PyClassType
 import com.jetbrains.python.psi.types.PyType
-import com.jetbrains.python.psi.types.PyTypeParser
+import com.jetbrains.python.psi.types.PyLegacyDocstringTypeParser
 import com.jetbrains.python.psi.types.PyUnionType
 import com.jetbrains.python.psi.types.TypeEvalContext
 import com.jetbrains.python.psi.types.isNoneType
@@ -80,7 +80,7 @@ object PyDocumentationLink {
    * instead of falling back to plain, unhighlighted text.
    */
   private fun resolveNamedClassType(typeName: String, anchor: PsiElement, context: TypeEvalContext): PyClassType? {
-    return when (val type = PyTypeParser.getTypeByName(anchor, typeName, context)) {
+    return when (val type = PyLegacyDocstringTypeParser.getTypeByName(anchor, typeName, context)) {
       is PyClassType -> type
       is PyUnionType -> type.members.filterIsInstance<PyClassType>().firstOrNull { it.name == typeName }
       else -> null
@@ -221,7 +221,6 @@ object PyDocumentationLink {
       .firstOrNull()
   }
 
-  @JvmStatic
   private fun possibleFunction(qualifiedName: String, element: PsiElement): PyFunction? {
     // TODO a better, more general way to resolve qualified names of function
     val facade = PyPsiFacade.getInstance(element.project)
@@ -240,7 +239,6 @@ object PyDocumentationLink {
       .firstOrNull()
   }
 
-  @JvmStatic
   private fun containingClass(element: PsiElement): PyClass? {
     return when (element) {
       is PyClass -> element
@@ -249,7 +247,6 @@ object PyDocumentationLink {
     }
   }
 
-  @JvmStatic
   private fun parameterPossibleClass(parameter: PsiElement, context: TypeEvalContext): PyClass? {
     if (parameter is PyNamedParameter) {
       val type = context.getType(parameter)
@@ -260,7 +257,6 @@ object PyDocumentationLink {
     return null
   }
 
-  @JvmStatic
   private fun possibleClass(type: String, anchor: PsiElement, context: TypeEvalContext): PyClass? {
     return resolveNamedClassType(type, anchor, context)?.pyClass
   }

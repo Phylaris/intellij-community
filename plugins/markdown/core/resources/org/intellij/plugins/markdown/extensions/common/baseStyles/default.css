@@ -300,10 +300,22 @@ pre {
   margin-bottom: 16px;
 }
 
-pre.frontmatter-header {
-  background-color: transparent;
+.frontmatter-header {
+  margin-top: calc(2 * var(--default-font-size, 14px));
+  margin-bottom: 24px;
+}
+
+.frontmatter-header + * {
+  margin-top: 0;
+  padding-top: 0;
+}
+
+table.frontmatter-header table {
   margin: 0;
-  padding: 0;
+}
+
+table.frontmatter-header th {
+  text-align: center;
 }
 
 ul,
@@ -405,6 +417,8 @@ img {
 
 code {
   font: 0.9em "JetBrains Mono", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+  font-weight: inherit;
+  font-style: inherit;
   padding: 0.2em 0.4em;
   margin: 2px;
   border-radius: 3px;

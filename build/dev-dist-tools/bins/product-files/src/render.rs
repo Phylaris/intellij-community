@@ -1,9 +1,10 @@
 // Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 
 use anyhow::bail;
+use appinfo::{ApplicationInfo, linux_frame_class};
 use serde::Serialize;
 
-use crate::model::{CustomCommand, IdeaProperties, JvmArguments, LaunchModel, LaunchProperty};
+use crate::model::{BUILD_NUMBER_TOKEN, CustomCommand, IdeaProperties, JvmArguments, JvmArgumentsRef, LaunchModel, LaunchProperty};
 
 // OS names are `OsFamily.osName`, and architecture names are `JvmArchitecture.dirName`.
 pub(crate) const OS_MAC: &str = "macOS";
@@ -45,40 +46,124 @@ pub(crate) struct LaunchFiles {
     pub product_info: String,
 }
 
+/// What the launch files of one product derive from: the launch model, the application info and the build number.
+#[derive(Clone, Copy)]
+pub(crate) struct Product<'a> {
+    pub model: &'a LaunchModel,
+    pub application_info: &'a ApplicationInfo,
+    pub build_number: &'a str,
+}
+
+/// Renders the four files. `common_vm_options_file` is the text of `bin/common.vmoptions`.
 pub(crate) fn render_launch_files(
-    model: &LaunchModel,
+    product: &Product<'_>,
     target: Platform,
     opened_packages_file: &str,
     idea_properties_base: &str,
+    common_vm_options_file: &str,
 ) -> anyhow::Result<LaunchFiles> {
-    let Some(vm_options) = model.vm_options.get(target.os) else {
-        bail!("the model states no vmoptions for {}", target.os);
-    };
+    let model = product.model;
     let separator = if target.os == OS_WINDOWS { "\r\n" } else { "\n" };
+    let mut vm_options = model.vm_options.memory.clone();
+    vm_options.extend(common_vm_options(common_vm_options_file));
+    vm_options.extend(model.vm_options.product.iter().cloned());
+    if let Some(os_vm_options) = model.vm_options.os.get(target.os) {
+        vm_options.extend(os_vm_options.iter().cloned());
+    }
+    if product.application_info.is_eap {
+        insert_eap_vm_options(&mut vm_options);
+    }
+    if model.language_server {
+        apply_headless_vm_options(&mut vm_options);
+    }
     let mut vm_options_text = String::new();
-    for line in vm_options {
+    for line in &vm_options {
         if !line.is_ascii() {
             bail!("the vmoptions line {line:?} is not ASCII");
         }
         vm_options_text.push_str(line);
         vm_options_text.push_str(separator);
     }
-    let product_info = render_product_info(model, target, &opened_packages(opened_packages_file, target.os)?)?;
+    let product_info = render_product_info(product, target, &opened_packages(opened_packages_file, target.os)?)?;
     Ok(LaunchFiles {
-        build_txt: format!("{}-{}", model.product_code, model.build_number),
-        idea_properties: render_idea_properties(&model.idea_properties, idea_properties_base),
+        build_txt: format!("{}-{}", model.product_code, product.build_number),
+        idea_properties: render_idea_properties(
+            &model.idea_properties,
+            idea_properties_base,
+            &model.data_directory_base_name,
+            product.application_info.is_eap,
+        ),
         vm_options: vm_options_text,
         product_info,
     })
 }
 
-fn render_idea_properties(properties: &IdeaProperties, base: &str) -> String {
+/// The data directory name of the product: the base name, then the major version and the main part of the minor version.
+///
+/// It equals `ProductProperties.getSystemSelector`. The plan generator checks that for every product.
+fn data_directory_name(product: &Product<'_>) -> String {
+    let application_info = product.application_info;
+    format!(
+        "{}{}.{}",
+        product.model.data_directory_base_name, application_info.major_version, application_info.minor_version_main_part
+    )
+}
+
+/// The lines of `bin/common.vmoptions`, without the blank lines and the `#` lines, as `VmOptionsGenerator.kt` reads them.
+pub(crate) fn common_vm_options(text: &str) -> impl Iterator<Item = String> + '_ {
+    text.lines()
+        .filter(|line| !line.trim().is_empty() && !line.starts_with('#'))
+        .map(str::to_owned)
+}
+
+/// The headless rule of `generateVmOptions` in `VmOptionsGenerator.kt` for a language server: drop every line that
+/// names an AWT, Swing, Java2D or Skiko property, then add `-Djava.awt.headless=true`.
+fn apply_headless_vm_options(lines: &mut Vec<String>) {
+    lines.retain(|line| !["awt.", "swing.", "java2d.", "skiko."].iter().any(|part| line.contains(part)));
+    lines.push("-Djava.awt.headless=true".to_owned());
+}
+
+/// `insertEapVmOptions` of `VmOptionsGenerator.kt`: the line of an EAP build goes before `-ea`, else before the first
+/// `-D` line, else at the end.
+pub(crate) fn insert_eap_vm_options(lines: &mut Vec<String>) {
+    let index = lines
+        .iter()
+        .position(|line| line == "-ea")
+        .or_else(|| lines.iter().position(|line| line.starts_with("-D")))
+        .unwrap_or(lines.len());
+    // It must be consistent with `ConfigImportHelper#updateVMOptions`.
+    lines.insert(index, "-XX:MaxJavaStackTraceDepth=10000".to_owned());
+}
+
+/// The block of `ideaPropertiesFatalErrorNotification` (`BuildTasksImpl.kt`) for an EAP build.
+const FATAL_ERROR_NOTIFICATION_EAP: &str = "\n#-----------------------------------------------------------------------\n\
+# Change to 'disabled' if you don't want to receive instant visual notifications\n\
+# about fatal errors that happen to an IDE or plugins installed.\n\
+#-----------------------------------------------------------------------\n\
+idea.fatal.error.notification=enabled\n";
+
+/// The block of `ideaPropertiesFatalErrorNotification` (`BuildTasksImpl.kt`) for a release build.
+const FATAL_ERROR_NOTIFICATION_RELEASE: &str = "\n#-----------------------------------------------------------------------\n\
+# Change to 'enabled' if you want to receive instant visual notifications\n\
+# about fatal errors that happen to an IDE or plugins installed.\n\
+#-----------------------------------------------------------------------\n\
+idea.fatal.error.notification=disabled\n";
+
+fn render_idea_properties(properties: &IdeaProperties, base: &str, data_directory_base_name: &str, is_eap: bool) -> String {
     let mut text = base.to_owned();
     for addition in &properties.additions {
         text.push('\n');
         text.push_str(addition);
     }
-    text.replace("@@settings_dir@@", &properties.settings_dir) + &properties.suffix
+    let mut text = text.replace("@@settings_dir@@", data_directory_base_name);
+    if properties.fatal_error_notification {
+        text.push_str(if is_eap {
+            FATAL_ERROR_NOTIFICATION_EAP
+        } else {
+            FATAL_ERROR_NOTIFICATION_RELEASE
+        });
+    }
+    text
 }
 
 /// `JavaModuleOptions.readOptions` of the `OpenedPackages.txt` text for `os`: every line, minus the lines that name a
@@ -110,7 +195,13 @@ pub(crate) fn opened_packages(text: &str, os: &str) -> anyhow::Result<Vec<String
 
 /// `renderAdditionalJvmArguments` of `ProductLaunchRenderer.kt`, for a launcher that is not a script and a
 /// distribution that is not portable.
-pub(crate) fn additional_jvm_arguments(jvm: &JvmArguments, target: Platform, opened_packages: &[String], qodana: bool) -> Vec<String> {
+pub(crate) fn additional_jvm_arguments(
+    jvm: &JvmArguments,
+    names: &LaunchNames<'_>,
+    target: Platform,
+    opened_packages: &[String],
+    qodana: bool,
+) -> Vec<String> {
     let mut result = Vec::new();
     let macro_name = match target.os {
         OS_WINDOWS => "%IDE_HOME%",
@@ -126,19 +217,19 @@ pub(crate) fn additional_jvm_arguments(jvm: &JvmArguments, target: Platform, ope
         result.push(format!("-Djava.system.class.loader={class_loader}"));
     }
 
-    result.push(format!("-Didea.vendor.name={}", jvm.vendor_name));
-    result.push(format!("-Didea.paths.selector={}", jvm.paths_selector));
-    if jvm.jna {
-        result.push(format!("-Djna.boot.library.path={macro_name}/lib/jna/{}", target.arch));
+    result.push(format!("-Didea.vendor.name={}", names.vendor_name));
+    result.push(format!("-Didea.paths.selector={}", names.data_directory_name));
+    if let Some(jna_native_dir) = &jvm.jna_native_dir {
+        result.push(format!("-Djna.boot.library.path={macro_name}/{jna_native_dir}/{}", target.arch));
         result.push("-Djna.nosys=true".to_owned());
         result.push("-Djna.noclasspath=true".to_owned());
     }
-    if jvm.pty4j {
-        result.push(format!("-Dpty4j.preferred.native.folder={macro_name}/lib/pty4j"));
+    if let Some(pty4j_native_dir) = &jvm.pty4j_native_dir {
+        result.push(format!("-Dpty4j.preferred.native.folder={macro_name}/{pty4j_native_dir}"));
     }
     result.push("-Dio.netty.allocator.type=pooled".to_owned());
-    if jvm.skiko {
-        result.push(format!("-Dskiko.library.path={macro_name}/lib/skiko-awt-runtime-all"));
+    if let Some(skiko_native_dir) = &jvm.skiko_native_dir {
+        result.push(format!("-Dskiko.library.path={macro_name}/{skiko_native_dir}"));
     }
     if jvm.runtime_module_repository {
         result.push(format!(
@@ -166,6 +257,12 @@ pub(crate) fn additional_jvm_arguments(jvm: &JvmArguments, target: Platform, ope
     }
     result.extend(opened_packages.iter().cloned());
     result
+}
+
+/// The names that every launch of a product states: the vendor and the data directory name, which is the paths selector.
+pub(crate) struct LaunchNames<'a> {
+    pub vendor_name: &'a str,
+    pub data_directory_name: &'a str,
 }
 
 /// `ProductInfoData` of `ProductInfoGenerator.kt` for a launch that bundles a runtime, with no built-in modules.
@@ -204,7 +301,7 @@ struct Launch<'a> {
     java_executable_path: String,
     vm_options_file_path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    startup_wm_class: Option<&'a str>,
+    startup_wm_class: Option<String>,
     #[serde(skip_serializing_if = "<[_]>::is_empty")]
     boot_class_path_jar_names: &'a [String],
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -241,13 +338,19 @@ struct Flavor<'a> {
 
 /// Renders `product-info.json` in the `prettyPrint` form of kotlinx.serialization, with no final newline.
 ///
+/// The names, the version, the build number, the icon, the vendor, the release date and the window class come from
+/// the application info and `build.txt`, as `ProductInfoGenerator.kt` takes them from `appInfo` and the build context.
+///
 /// `serde_json::to_string_pretty` indents by two spaces and escapes as kotlinx does: the quote, the backslash and the
 /// control characters, with lowercase hex digits.
-fn render_product_info(model: &LaunchModel, target: Platform, opened_packages: &[String]) -> anyhow::Result<String> {
-    let date = &model.major_version_release_date;
-    if date.len() != 8 || !date.bytes().all(|byte| byte.is_ascii_digit()) {
-        bail!("the major release date {date:?} is not yyyyMMdd");
-    }
+fn render_product_info(product: &Product<'_>, target: Platform, opened_packages: &[String]) -> anyhow::Result<String> {
+    let model = product.model;
+    let application_info = product.application_info;
+    let data_directory_name = data_directory_name(product);
+    let names = LaunchNames {
+        vendor_name: &application_info.short_company_name,
+        data_directory_name: &data_directory_name,
+    };
     let to_root = if target.os == OS_MAC && !model.language_server { "../" } else { "" };
     let (launcher_path, java_executable_path) = match target.os {
         OS_MAC => {
@@ -269,28 +372,31 @@ fn render_product_info(model: &LaunchModel, target: Platform, opened_packages: &
         launcher_path,
         java_executable_path,
         vm_options_file_path: vm_options_file_path(target.os, &model.base_file_name, model.language_server),
-        startup_wm_class: (target.os == OS_LINUX).then_some(model.launch.linux_startup_wm_class.as_str()),
+        startup_wm_class: (target.os == OS_LINUX).then(|| linux_frame_class(&application_info.product_name_with_edition())),
         boot_class_path_jar_names: &model.launch.boot_class_path_jar_names,
-        additional_jvm_arguments: additional_jvm_arguments(&model.launch.jvm_arguments, target, opened_packages, false),
+        additional_jvm_arguments: additional_jvm_arguments(&model.launch.jvm_arguments, &names, target, opened_packages, false),
         main_class: &model.launch.main_class,
         stdio_redirect_arg: model.launch.stdio_redirect_arg.as_deref(),
         custom_commands: model
             .custom_commands
             .iter()
-            .map(|command| render_custom_command(command, target, opened_packages))
-            .collect(),
+            .map(|command| render_custom_command(command, product, &names, target, opened_packages))
+            .collect::<anyhow::Result<_>>()?,
     };
     let info = ProductInfo {
-        name: &model.product_name,
-        version: &model.version,
-        version_suffix: model.version_suffix.as_deref(),
-        build_number: &model.build_number,
+        name: &application_info.full_product_name,
+        version: &application_info.version,
+        version_suffix: application_info.version_suffix.as_deref(),
+        build_number: product.build_number,
         product_code: &model.product_code,
         env_var_base_name: &model.env_var_base_name,
-        data_directory_name: &model.data_directory_name,
-        svg_icon_path: model.svg_icon.then(|| format!("{to_root}bin/{}.svg", model.base_file_name)),
-        product_vendor: &model.product_vendor,
-        major_version_release_date: date,
+        data_directory_name: &data_directory_name,
+        svg_icon_path: application_info
+            .svg_icon
+            .as_ref()
+            .map(|_| format!("{to_root}bin/{}.svg", model.base_file_name)),
+        product_vendor: &application_info.short_company_name,
+        major_version_release_date: &application_info.major_release_date,
         min_required_java_version: model.min_required_java_version,
         launch: [launch],
         custom_properties: &model.custom_properties,
@@ -299,24 +405,51 @@ fn render_product_info(model: &LaunchModel, target: Platform, opened_packages: &
     Ok(serde_json::to_string_pretty(&info)?)
 }
 
-fn render_custom_command<'a>(command: &'a CustomCommand, target: Platform, opened_packages: &[String]) -> Command<'a> {
+/// Renders one custom command. The command takes the JVM arguments of the block it names, and a command that states an
+/// environment variable name states the data directory name of the product.
+fn render_custom_command<'a>(
+    command: &'a CustomCommand,
+    product: &Product<'a>,
+    names: &LaunchNames<'a>,
+    target: Platform,
+    opened_packages: &[String],
+) -> anyhow::Result<Command<'a>> {
+    let model = product.model;
     let mut arguments = Vec::new();
-    if let Some(jvm) = &command.jvm_arguments {
-        arguments.extend(additional_jvm_arguments(jvm, target, opened_packages, command.qodana));
+    let jvm = match command.jvm_arguments {
+        None => None,
+        Some(JvmArgumentsRef::Launch) => Some(&model.launch.jvm_arguments),
+        Some(JvmArgumentsRef::Frontend) => {
+            let Some(jvm) = &model.frontend_jvm_arguments else {
+                bail!(
+                    "the custom command {:?} names the frontend JVM arguments, but the model states no frontendJvmArguments",
+                    command.commands
+                );
+            };
+            Some(jvm)
+        }
+    };
+    if let Some(jvm) = jvm {
+        arguments.extend(additional_jvm_arguments(jvm, names, target, opened_packages, command.qodana));
     }
     if target.os == OS_MAC {
         arguments.extend(command.mac_jvm_arguments.iter().cloned());
     }
-    arguments.extend(command.extra_jvm_arguments.iter().cloned());
-    Command {
+    arguments.extend(
+        command
+            .extra_jvm_arguments
+            .iter()
+            .map(|argument| argument.replace(BUILD_NUMBER_TOKEN, product.build_number)),
+    );
+    Ok(Command {
         commands: &command.commands,
         vm_options_file_path: command.vm_options_file_path.get(target.os).map(String::as_str),
         boot_class_path_jar_names: &command.boot_class_path_jar_names,
         additional_jvm_arguments: arguments,
         main_class: command.main_class.as_deref(),
         env_var_base_name: command.env_var_base_name.as_deref(),
-        data_directory_name: command.data_directory_name.as_deref(),
-    }
+        data_directory_name: command.env_var_base_name.as_ref().map(|_| names.data_directory_name),
+    })
 }
 
 /// `vmOptionsFilePath` of `ProductLaunchModel.kt` for a launch of the product itself.

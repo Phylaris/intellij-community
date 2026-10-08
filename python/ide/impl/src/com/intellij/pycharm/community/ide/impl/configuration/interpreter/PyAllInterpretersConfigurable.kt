@@ -3,6 +3,7 @@ package com.intellij.pycharm.community.ide.impl.configuration.interpreter
 
 import com.intellij.icons.AllIcons
 import com.intellij.ide.DataManager
+import com.intellij.ide.ui.icons.icon
 import com.intellij.ide.ui.laf.darcula.DarculaUIUtil.BW
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.ActionPlaces
@@ -11,7 +12,8 @@ import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.actionSystem.Presentation
 import com.intellij.openapi.actionSystem.ex.ActionButtonLook
-import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.EDT
+import com.intellij.openapi.application.WriteAction
 import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.module.ModuleManager
 import com.intellij.openapi.options.Configurable
@@ -21,12 +23,17 @@ import com.intellij.openapi.options.ex.Settings
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.DumbAwareToggleAction
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.projectRoots.ProjectJdkTable
 import com.intellij.openapi.projectRoots.Sdk
 import com.intellij.openapi.roots.ui.configuration.projectRoot.ProjectSdksModel
-import com.intellij.openapi.options.newEditor.SettingsDialog
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.wm.ToolWindowManager
+import com.intellij.python.sdk.backend.PythonInterpreter
+import com.intellij.python.sdk.backend.asItem
+import com.intellij.python.sdk.backend.getSdkAPI
+import com.intellij.python.sdk.backend.pythonInterpreterAsync
+import com.intellij.python.sdk.common.PyInterpreterItem
 import com.intellij.ui.CollectionListModel
 import com.intellij.ui.DocumentAdapter
 import com.intellij.ui.IdeBorderFactory
@@ -36,36 +43,28 @@ import com.intellij.ui.SimpleColoredComponent
 import com.intellij.ui.SimpleTextAttributes
 import com.intellij.ui.components.JBList
 import com.intellij.ui.components.JBScrollPane
-import com.intellij.ui.hover.ListHoverListener
-import com.intellij.ui.popup.list.SelectablePanel
-import com.intellij.util.ui.JBInsets
-import com.intellij.util.ui.UIUtil
 import com.intellij.ui.dsl.builder.Align
 import com.intellij.ui.dsl.builder.TopGap
 import com.intellij.ui.dsl.builder.panel
+import com.intellij.ui.hover.ListHoverListener
+import com.intellij.ui.popup.list.SelectablePanel
+import com.intellij.util.ui.JBInsets
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.JBUI.insets
-import com.intellij.ide.ui.icons.icon
-import com.intellij.openapi.application.EDT
-import com.intellij.python.sdk.backend.PythonInterpreter
-import com.intellij.python.sdk.backend.asItem
-import com.intellij.python.sdk.backend.getSdkAPI
-import com.intellij.python.sdk.backend.pythonInterpreterAsync
-import com.intellij.python.sdk.common.PyInterpreterItem
+import com.intellij.util.ui.UIUtil
 import com.jetbrains.python.PyBundle
 import com.jetbrains.python.configuration.PyInterpreterEditDialogLauncher
-import com.jetbrains.python.target.PyTargetAwareAdditionalData
 import com.jetbrains.python.configuration.PyInterpreterPathsDialogLauncher
 import com.jetbrains.python.packaging.toolwindow.PyPackagingToolWindowPanel
+import com.jetbrains.python.packaging.utils.PyPackageCoroutine
 import com.jetbrains.python.project.PyProject.Companion.getPyProjects
-import com.jetbrains.python.sdk.ModuleOrProject
+import com.jetbrains.python.sdk.asModuleOrProject
 import com.jetbrains.python.sdk.associatedModuleNioPath
 import com.jetbrains.python.sdk.collectAddInterpreterActions
-import com.jetbrains.python.sdk.filterAssignablePythonSdks
-import com.jetbrains.python.packaging.utils.PyPackageCoroutine
+import com.jetbrains.python.sdk.filter.filterAssignablePythonSdks
+import com.jetbrains.python.target.PyTargetAwareAdditionalData
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.nio.file.Path
 import java.awt.BorderLayout
 import java.awt.Component
 import java.awt.Cursor
@@ -76,6 +75,7 @@ import java.awt.Rectangle
 import java.awt.datatransfer.StringSelection
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
+import java.nio.file.Path
 import javax.swing.Icon
 import javax.swing.JComponent
 import javax.swing.JList
@@ -249,7 +249,11 @@ internal class PyAllInterpretersConfigurable(private val project: Project) : Sea
     perRowSdkModified = true
   }
 
-  override fun isModified(): Boolean = projectSdksModel.isModified || perRowSdkModified
+  // Add / Remove / Edit flows mutate `ProjectJdkTable` and real SDKs directly, so there is nothing
+  // pending in `projectSdksModel` to apply or revert — the model only serves as a lazy source for
+  // the list and gets re-read via `reset(project)` whenever the JDK table or the per-row dialogs
+  // change state.
+  override fun isModified(): Boolean = perRowSdkModified
 
   override fun reset() {
     projectSdksModel.reset(project)
@@ -258,7 +262,6 @@ internal class PyAllInterpretersConfigurable(private val project: Project) : Sea
   }
 
   override fun apply() {
-    projectSdksModel.apply(null)
     perRowSdkModified = false
   }
 
@@ -268,7 +271,7 @@ internal class PyAllInterpretersConfigurable(private val project: Project) : Sea
 
   private fun reloadList(preferredSelection: Sdk? = null) {
     val previouslySelected = (preferredSelection?.name ?: selectedInterpreter()?.sdk?.name)?.let(::PySdkName)
-    val allEditable = project.filterAssignablePythonSdks(projectSdksModel.sdks.toList(), null)
+    val allEditable = project.asModuleOrProject.filterAssignablePythonSdks(projectSdksModel.sdks.toList())
     PyPackageCoroutine.launch(project, Dispatchers.IO) {
       val interpreters = allEditable.map { it.pythonInterpreterAsync() }
       val moduleBasePaths = project.getPyProjects().mapTo(HashSet()) { it.baseDir }
@@ -297,8 +300,11 @@ internal class PyAllInterpretersConfigurable(private val project: Project) : Sea
   ) {
     override fun actionPerformed(e: AnActionEvent) {
       val group = DefaultActionGroup().apply {
-        addAll(collectAddInterpreterActions(ModuleOrProject.ProjectOnly(project)) { newSdk ->
-          projectSdksModel.addSdk(newSdk)
+        addAll(collectAddInterpreterActions(project.asModuleOrProject) { newSdk ->
+          // Wizard already committed `newSdk` to `ProjectJdkTable`. Re-reading `projectSdksModel`
+          // from the live table picks it up (with its `PythonSdkUpdater`-filled paths) without
+          // going through the add-time clone that caused PY-92599.
+          projectSdksModel.reset(project)
           reloadList(preferredSelection = newSdk)
         })
         // Optional third-party extras (AI Assistant / Toolbox / others). The group is declared
@@ -347,7 +353,8 @@ internal class PyAllInterpretersConfigurable(private val project: Project) : Sea
     AllIcons.General.Remove,
   ) {
     override fun perform(interpreter: PythonInterpreter) {
-      interpreter.removeFrom(projectSdksModel)
+      interpreter.removeFromJdkTable()
+      projectSdksModel.reset(project)
       reloadList()
     }
   }
@@ -580,9 +587,12 @@ private object RowActionMetrics {
 private val PythonInterpreter.sdk: Sdk
   get() = getSdkAPI()
 
-/** Removes the underlying SDK from [model]. */
-internal fun PythonInterpreter.removeFrom(model: ProjectSdksModel) {
-  model.removeSdk(sdk)
+/** Removes the underlying SDK from `ProjectJdkTable`. */
+internal fun PythonInterpreter.removeFromJdkTable() {
+  val target = sdk
+  WriteAction.runAndWait<RuntimeException> {
+    ProjectJdkTable.getInstance().removeJdk(target)
+  }
 }
 
 /**

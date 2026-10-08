@@ -4,18 +4,22 @@
     <module name="intellij.platform.frontend"/>
     <module name="fleet.rhizomedb"/>
     <module name="intellij.libraries.caffeine"/>
+    <module name="intellij.libraries.fastutil"/>
     <module name="intellij.libraries.guava"/>
     <module name="intellij.libraries.jediterm.core"/>
     <module name="intellij.libraries.jediterm.ui"/>
     <module name="intellij.libraries.kotlinx.datetime"/>
     <module name="intellij.libraries.kotlinx.serialization.core"/>
     <module name="intellij.libraries.kotlinx.serialization.json"/>
+    <module name="intellij.libraries.opentelemetry"/>
     <module name="intellij.libraries.pty4j"/>
     <module name="intellij.platform.analysis"/>
     <module name="intellij.platform.codeStyle"/>
+    <module name="intellij.platform.consoleView"/>
     <module name="intellij.platform.core"/>
     <module name="intellij.platform.core.impl"/>
     <module name="intellij.platform.core.ui"/>
+    <module name="intellij.platform.diagnostic.telemetry"/>
     <module name="intellij.platform.editor.ex"/>
     <module name="intellij.platform.editor.ui"/>
     <module name="intellij.platform.eel.impl"/>
@@ -29,6 +33,7 @@
     <module name="intellij.platform.ide.impl"/>
     <module name="intellij.platform.ide.observable"/>
     <module name="intellij.platform.ide.progress"/>
+    <module name="intellij.platform.ide.tabInEditor"/>
     <module name="intellij.platform.ide.ui"/>
     <module name="intellij.platform.indexing"/>
     <module name="intellij.platform.inline.completion"/>
@@ -40,6 +45,7 @@
     <module name="intellij.platform.refactoring"/>
     <module name="intellij.platform.rpc.topics"/>
     <module name="intellij.platform.statistics"/>
+    <module name="intellij.platform.util.annotations"/>
     <module name="intellij.platform.util.coroutines"/>
     <module name="intellij.platform.util.ui"/>
     <module name="intellij.terminal.emulator"/>
@@ -117,6 +123,8 @@
     <toolWindowInitializer implementation="com.intellij.terminal.frontend.toolwindow.impl.TerminalToolWindowTabsManagerImpl$Initializer"/>
 
     <portForwardingManager implementation="com.intellij.terminal.frontend.view.portForwarding.TerminalPortForwardingManagerImpl"/>
+
+    <workingDirectoryCustomizer implementation="com.intellij.terminal.frontend.settings.WelcomeProjectTerminalWorkingDirectoryCustomizer"/>
 
     <escapeHandler implementation="com.intellij.terminal.frontend.action.CancelSelection"/>
     <escapeHandler implementation="com.intellij.terminal.frontend.action.CloseSearch"/>

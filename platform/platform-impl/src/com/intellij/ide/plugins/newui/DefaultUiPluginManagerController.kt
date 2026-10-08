@@ -83,8 +83,6 @@ import java.io.File
 import java.io.IOException
 import java.nio.file.FileVisitResult
 import java.util.EnumMap
-import java.util.LinkedHashMap
-import java.util.LinkedHashSet
 import java.util.UUID
 import javax.swing.JComponent
 import kotlin.coroutines.CoroutineContext
@@ -389,7 +387,7 @@ object DefaultUiPluginManagerController : UiPluginManagerController {
   override suspend fun findPluginNames(pluginIds: List<PluginId>): List<String> {
     val requests = MarketplaceRequests.getInstance()
     return pluginIds.map {
-      PluginManagerCore.findPlugin(it)?.name ?: requests.getLastCompatiblePluginUpdate(it)?.name ?: it.idString
+      PluginManagerCore.findPlugin(it)?.name ?: requests.getLastCompatiblePluginUpdateModel(it)?.name ?: it.idString
     }
   }
 
@@ -611,7 +609,7 @@ object DefaultUiPluginManagerController : UiPluginManagerController {
     return MarketplaceRequests.getInstance().marketplaceTagCountsSupplier.get()
   }
 
-  override fun getAllVendors(): Set<String> {
+  override suspend fun getMarketplaceVendors(): Set<String> {
     return MarketplaceRequests.getInstance().marketplaceVendorsSupplier.get()
   }
 

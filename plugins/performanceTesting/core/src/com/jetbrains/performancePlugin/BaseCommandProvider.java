@@ -56,6 +56,7 @@ import com.jetbrains.performancePlugin.commands.InspectionCommandEx;
 import com.jetbrains.performancePlugin.commands.InstallCustomJBR;
 import com.jetbrains.performancePlugin.commands.JBRFullGCCommand;
 import com.jetbrains.performancePlugin.commands.LogProjectLibrariesAndSdksCommand;
+import com.jetbrains.performancePlugin.commands.MarkCommand;
 import com.jetbrains.performancePlugin.commands.MeasureVFSUpdateCommand;
 import com.jetbrains.performancePlugin.commands.MeasureVfsMassUpdateCommand;
 import com.jetbrains.performancePlugin.commands.MeasureSettingsDialogCommand;
@@ -112,6 +113,7 @@ import com.jetbrains.performancePlugin.commands.WaitForInitialRefreshCommand;
 import com.jetbrains.performancePlugin.commands.WaitForProjectViewCommand;
 import com.jetbrains.performancePlugin.commands.WaitForReOpenedFileCommand;
 import com.jetbrains.performancePlugin.commands.WaitForSmartCommand;
+import com.jetbrains.performancePlugin.commands.AssertProductModeCommand;
 import com.jetbrains.performancePlugin.commands.WaitForVfsRefreshSelectedEditorCommand;
 import com.jetbrains.performancePlugin.commands.WaitJpsBuildCommand;
 import org.jetbrains.annotations.NotNull;
@@ -141,6 +143,7 @@ public final class BaseCommandProvider implements CommandProvider {
       Map.entry(ExitAppWithTimeoutCommand.PREFIX, ExitAppWithTimeoutCommand::new),
       Map.entry(OpenFileWithTerminateCommand.PREFIX, OpenFileWithTerminateCommand::new),
       Map.entry(WaitForSmartCommand.PREFIX, WaitForSmartCommand::new),
+      Map.entry(AssertProductModeCommand.PREFIX, AssertProductModeCommand::new),
       Map.entry(WaitForFirstScanningToFinishCommand.PREFIX, WaitForFirstScanningToFinishCommand::new),
       Map.entry(WaitForInitialRefreshCommand.PREFIX, WaitForInitialRefreshCommand::new),
       Map.entry(RefreshFilesInVfsCommand.PREFIX, RefreshFilesInVfsCommand::new),
@@ -204,6 +207,7 @@ public final class BaseCommandProvider implements CommandProvider {
       Map.entry(MoveCaretCommand.PREFIX, MoveCaretCommand::new),
       Map.entry(TakeThreadDumpCommand.PREFIX, TakeThreadDumpCommand::new),
       Map.entry(CaptureMemoryMetricsCommand.PREFIX, CaptureMemoryMetricsCommand::new),
+      Map.entry(MarkCommand.PREFIX, MarkCommand::new),
       Map.entry(SleepCommand.PREFIX, SleepCommand::new),
       Map.entry(AssertEncodingFileCommand.PREFIX, AssertEncodingFileCommand::new),
       Map.entry(SetModuleJdkCommand.PREFIX, SetModuleJdkCommand::new),

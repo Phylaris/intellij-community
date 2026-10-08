@@ -1,5 +1,5 @@
 # The packaging recipe the 'platform_lib_reference' dev-distribution fragment executed, in the checked-in content-report schema (com.intellij.platform.distributionContent.FileEntry).
-# Written by DevDistRecipe; 491 outputs.
+# Written by DevDistRecipe; 490 outputs.
 - name: lib/ext/platform-main.jar
   modules:
   - name: intellij.platform.starter
@@ -3776,15 +3776,6 @@
     label: '@@community+//platform/non-modal-welcome-screen:non-modal-welcome-screen.jar'
     module: intellij.platform.ide.nonModalWelcomeScreen
     filter: unkeyed
-- name: lib/intellij.platform.ide.nonModalWelcomeScreen.terminal.jar
-  modules:
-  - name: intellij.platform.ide.nonModalWelcomeScreen.terminal
-  kind: jar
-  sources:
-  - kind: zip
-    label: '@@community+//platform/non-modal-welcome-screen/terminal:terminal.jar'
-    module: intellij.platform.ide.nonModalWelcomeScreen.terminal
-    filter: unkeyed
 - name: lib/intellij.platform.ide.observable.jar
   modules:
   - name: intellij.platform.ide.observable
@@ -4408,14 +4399,14 @@
     label: '@@community+//platform/pluginManager/frontend:frontend.jar'
     module: intellij.platform.pluginManager.frontend
     filter: unkeyed
-- name: lib/intellij.platform.pluginManager.shared.base.jar
+- name: lib/intellij.platform.pluginManager.shared.baseline.jar
   modules:
-  - name: intellij.platform.pluginManager.shared.base
+  - name: intellij.platform.pluginManager.shared.baseline
   kind: jar
   sources:
   - kind: zip
-    label: '@@community+//platform/pluginManager/shared.base:shared.base.jar'
-    module: intellij.platform.pluginManager.shared.base
+    label: '@@community+//platform/pluginManager/shared.baseline:shared.base.jar'
+    module: intellij.platform.pluginManager.shared.baseline
     filter: unkeyed
 - name: lib/intellij.platform.pluginManager.shared.jar
   modules:
@@ -5244,14 +5235,14 @@
     label: '@@//plugins/profiler/ultimate/idea-async-profiler:idea-async-profiler.jar'
     module: intellij.profiler.ultimate.ideaAsyncProfiler
     filter: unkeyed
-- name: lib/intellij.rd.client.base.jar
+- name: lib/intellij.rd.client.baseline.jar
   modules:
-  - name: intellij.rd.client.base
+  - name: intellij.rd.client.baseline
   kind: jar
   sources:
   - kind: zip
-    label: '@@//remote-dev/rd-client/base:base.jar'
-    module: intellij.rd.client.base
+    label: '@@//remote-dev/rd-client/baseline:base.jar'
+    module: intellij.rd.client.baseline
     filter: unkeyed
 - name: lib/intellij.rd.client.debugger.jar
   modules:

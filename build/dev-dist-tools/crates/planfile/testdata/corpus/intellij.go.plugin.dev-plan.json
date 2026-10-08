@@ -2,7 +2,6 @@
     "version": 2,
     "plugin": "intellij.go.plugin",
     "variant": "",
-    "layoutSignature": "65irmb9l56obtkckxt51z7pv3",
     "assets": [
         {
             "module": "intellij.go.template.integration"
@@ -196,18 +195,6 @@
             ],
             "kind": "tree",
             "classPath": false
-        }
-    ],
-    "preparations": [
-        {
-            "id": "layout-assets:resource-generator:1",
-            "inputs": [
-                "layout-source:resource-generator:1:0"
-            ],
-            "outputs": [
-                "layout-assets:resource-generator:1:output"
-            ],
-            "modelSignature": "5p75hlfrkxembyxlreuj33frt"
         }
     ],
     "operations": [

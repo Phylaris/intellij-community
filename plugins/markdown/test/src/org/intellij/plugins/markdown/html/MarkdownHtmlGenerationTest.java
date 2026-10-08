@@ -55,6 +55,11 @@ public class MarkdownHtmlGenerationTest extends BasePlatformTestCase {
     doTestByHtmlFile();
   }
 
+  @TestFor(issues = "IJPL-92231")
+  public void testLinkFromProjectRoot() {
+    doTestByHtmlFile();
+  }
+
   public void testCodeFenceWithLang() {
     doTestByHtmlFile();
   }
@@ -87,6 +92,10 @@ public class MarkdownHtmlGenerationTest extends BasePlatformTestCase {
 
     assertTrue(html.contains(">line\n"));
     assertFalse(html.contains("> line\n"));
+  }
+
+  public void testEmphasisAroundCodeSpan() {
+    doTestByHtmlFile();
   }
 
   public void testIndentedCodeFenceCopyContentMatchesPreview() {
@@ -217,6 +226,26 @@ public class MarkdownHtmlGenerationTest extends BasePlatformTestCase {
   }
 
   public void testFootnoteBodyWithDefinedReference() {
+    doTestByHtmlFile();
+  }
+
+  @TestFor(issues = "IJPL-94598")
+  public void testFrontMatterYaml() {
+    doTestByHtmlFile();
+  }
+
+  @TestFor(issues = "IJPL-94598")
+  public void testFrontMatterYamlNestedMapping() {
+    doTestByHtmlFile();
+  }
+
+  @TestFor(issues = "IJPL-94598")
+  public void testFrontMatterYamlInvalid() {
+    doTestByHtmlFile();
+  }
+
+  @TestFor(issues = "IJPL-94598")
+  public void testFrontMatterYamlAliasExpansion() {
     doTestByHtmlFile();
   }
 

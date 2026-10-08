@@ -3,13 +3,12 @@
 package com.intellij.platform.buildScripts.pluginModelTool
 
 import org.jetbrains.annotations.ApiStatus
+import org.jetbrains.intellij.build.dev.DevPluginPreparationOperation
 import org.jetbrains.intellij.build.devDist.CanonicalJarRecipe
-import org.jetbrains.intellij.build.devDist.DISTRIBUTION_ASSET_SCOPE
 import org.jetbrains.intellij.build.devDist.JarSourceRecipe
 import org.jetbrains.intellij.build.devDist.JarWriterRecipe
 import org.jetbrains.intellij.build.devDist.NATIVE_TREE_INPUT_PREFIX
 import org.jetbrains.intellij.build.devDist.PluginPackingAsset
-import org.jetbrains.intellij.build.devDist.PluginPackingPreparation
 import org.jetbrains.intellij.build.devDist.PluginPackingProjection
 import org.jetbrains.intellij.build.devDist.ReusableJarArtifact
 import org.jetbrains.intellij.build.devDist.planPluginPacking
@@ -78,14 +77,14 @@ data class PluginSymbolicVariant(
 )
 
 /**
- * Declares an opaque operation and all its contributions without running its callback.
+ * Declares an [operation] and all its contributions without running its callback.
  * [sources] replace a filtered root or supply a custom jar. [assets] declare generated files outside that jar.
  * [sourceContributions] maps each original root to its own ordered sources when multiple roots share an operation.
  * Such contributions must not share a source: a merged bundle cannot stand in for separate source positions.
  */
 @ApiStatus.Internal
 data class PluginSymbolicPreparedEffect(
-  @JvmField val preparation: PluginPackingPreparation,
+  @JvmField val operation: DevPluginPreparationOperation,
   @JvmField val sources: List<JarSourceRecipe> = emptyList(),
   @JvmField val assets: List<PluginPackingAsset> = emptyList(),
   @JvmField val sourceContributions: Map<String, List<JarSourceRecipe>> = emptyMap(),
@@ -105,12 +104,12 @@ data class PluginSymbolicNativeOccurrence(
 data class PluginSymbolicNativeUse(
   @JvmField val occurrence: PluginSymbolicNativeOccurrence,
   @JvmField val handling: PluginSymbolicNativeHandling,
-  @JvmField val distributionPrefix: String?,
+  @JvmField val nativeTreePrefix: String?,
 )
 
 /**
  * Keys name layout slots: `layout-patcher:N`, `custom-asset:N`, `resource:N`, `resource-generator:N`,
- * `platform-resource-generator:N`, `platform-custom-asset:N`, `module-filter:MODULE`, `searchable-options:MODULE`,
+ * `platform-resource-generator:N`, `platform-custom-asset:N`, `searchable-options:MODULE`,
  * or an artifact's preparation key. A `platform-*` index counts only the callbacks that serve the variant's distribution.
  * [modulePatches] gives the final patch order, including the descriptor, after every declared patcher runs.
  * [preparedSourceManifests] is keyed by prepared output ID and records original counts and concrete execution policies.
@@ -120,7 +119,7 @@ data class PluginSymbolicNativeUse(
 data class PluginSymbolicPreparationFacts(
   @JvmField val effects: Map<String, PluginSymbolicPreparedEffect> = emptyMap(),
   @JvmField val modulePatches: Map<String, List<JarSourceRecipe>> = emptyMap(),
-  @JvmField val dependencies: List<PluginPackingPreparation> = emptyList(),
+  @JvmField val dependencies: List<DevPluginPreparationOperation> = emptyList(),
   @JvmField val preparedSourceManifests: Map<String, PluginSymbolicPreparedSourceManifest> = emptyMap(),
   /** Declared assets that need no Kotlin preparation. Keys use the same layout slots as [effects]. */
   @JvmField val declaredAssets: Map<String, List<PluginPackingAsset>> = emptyMap(),
@@ -140,7 +139,7 @@ class PluginSymbolicLayout internal constructor(
   @JvmField val plugin: String,
   @JvmField val variant: String,
   @JvmField val assets: List<PluginPackingAsset>,
-  @JvmField val preparations: List<PluginPackingPreparation>,
+  @JvmField val operations: List<DevPluginPreparationOperation>,
   @JvmField val preparationRoots: List<String>,
   @JvmField val gaps: List<PluginSymbolicLayoutGap>,
 ) {
@@ -156,7 +155,7 @@ class PluginSymbolicLayout internal constructor(
       plugin = plugin,
       variant = variant,
       assets = assets,
-      preparations = preparations,
+      operations = operations,
       preparationRoots = preparationRoots,
       artifacts = artifacts,
     )
@@ -164,10 +163,9 @@ class PluginSymbolicLayout internal constructor(
       version = pluginPackingExecutionVersion(assets),
       plugin = plugin,
       variant = variant,
-      layoutSignature = plan.layoutSignature,
       assets = assets,
-      preparations = preparations,
       preparationRoots = preparationRoots,
+      operations = operations,
     )
     return PluginSymbolicProjection(projection, plan.assets.mapNotNull { it.artifact }.distinct())
   }
@@ -235,12 +233,12 @@ class PluginSymbolicJarAssembly {
 
   /**
    * Marks the jar at [destination] as the jar of the presigned native library [library]. The jar leaves the library's
-   * native entries out, and its native tree goes to [distributionPrefix] at the distribution root. Only a reused
+   * native entries out, and its native tree goes to [nativeTreePrefix] in the plugin directory. Only a reused
    * `content_module_jar` packs such a jar, and the tree is its output.
    */
-  internal fun markNatives(destination: String, library: String, distributionPrefix: String, reportGap: (PluginSymbolicLayoutGap) -> Unit) {
+  internal fun markNatives(destination: String, library: String, nativeTreePrefix: String, reportGap: (PluginSymbolicLayoutGap) -> Unit) {
     val jar = jars.computeIfAbsent(destination) { SymbolicJar() }
-    val natives = PluginSymbolicJarNatives(library, distributionPrefix)
+    val natives = PluginSymbolicJarNatives(library, nativeTreePrefix)
     val previous = jar.natives
     if (previous != null && previous != natives) {
       reportGap(PluginSymbolicLayoutGap("native-library:$destination", "A jar merges two presigned native libraries: ${previous.library} and $library"))
@@ -279,7 +277,7 @@ class PluginSymbolicJarAssembly {
         val asset = PluginPackingAsset(
           destination = destination,
           inputs = sources.map { it.input }.distinct(),
-          recipe = CanonicalJarRecipe(sources = sources, writer = JarWriterRecipe(mergeEntities = true, directoryEntries = jar.testOutput)),
+          recipe = CanonicalJarRecipe(sources = sources, writer = JarWriterRecipe(mergeEntities = true)),
         )
         listOf(resolvePluginSymbolicManifest(asset, preparedSourceManifests, libraryFileCounts, reportGap))
       }
@@ -296,11 +294,10 @@ class PluginSymbolicJarAssembly {
             recipe = CanonicalJarRecipe(sources = sources, writer = JarWriterRecipe(mergeEntities = true, nativeLib = natives.library)),
           ),
           PluginPackingAsset(
-            destination = natives.distributionPrefix.removeSuffix("/"),
+            destination = natives.nativeTreePrefix.removeSuffix("/"),
             inputs = listOf(NATIVE_TREE_INPUT_PREFIX + owner.input),
             kind = "tree",
             classPath = false,
-            scope = DISTRIBUTION_ASSET_SCOPE,
           ),
         )
       }
@@ -345,4 +342,4 @@ class PluginSymbolicJarAssembly {
   }
 }
 
-private data class PluginSymbolicJarNatives(val library: String, val distributionPrefix: String)
+private data class PluginSymbolicJarNatives(val library: String, val nativeTreePrefix: String)

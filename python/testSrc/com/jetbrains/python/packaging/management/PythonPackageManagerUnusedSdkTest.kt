@@ -9,7 +9,7 @@ import com.intellij.openapi.projectRoots.ProjectJdkTable
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.projectRoots.Sdk
 import com.intellij.openapi.roots.ModuleRootModificationUtil
-import com.intellij.python.junit5Tests.framework.pyModuleFixture
+import com.intellij.python.junit5Tests.framework.pyProjectFixture
 import com.intellij.python.pyproject.model.evolution.EvoPyProjectModel
 import com.intellij.testFramework.common.timeoutRunBlocking
 import com.intellij.testFramework.junit5.TestApplication
@@ -32,6 +32,9 @@ import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
+import com.intellij.python.sdk.backend.PythonInterpreter
+import com.intellij.python.sdk.backend.getSdkAPI
+import com.intellij.python.sdk.backend.pythonInterpreterAsync
 
 /**
  * A package manager watches the paths of its interpreter and asks for a full update on a change, and that update starts
@@ -45,33 +48,34 @@ internal class PythonPackageManagerUnusedSdkTest {
   private val projectFixture = projectFixture()
   // With a content root: a module without one is no `PyProject`, so `EvoPyProjectModel` does not see it at all
   private val modulePathFixture = tempPathFixture(prefix = "py-88315-packages")
-  private val moduleFixture = projectFixture.pyModuleFixture(modulePathFixture, addPathToSourceRoot = true)
+  private val pyProjectFixture = projectFixture.pyProjectFixture(modulePathFixture)
 
   @Test
-  fun `the manager of an interpreter is cached`(@TempDir home: Path, @TestDisposable disposable: Disposable) {
-    val project = projectFixture.get()
-    val module = moduleFixture.get()
-    val sdk = registerSdk("PY-88315 packages cached", home, disposable)
-    module.useSdk(sdk)
-    val service = project.service<PythonPackageManagerService>()
+  fun `the manager of an interpreter is cached`(@TempDir home: Path, @TestDisposable disposable: Disposable): Unit =
+    timeoutRunBlocking(1.minutes) {
+      val project = projectFixture.get()
+      val module = pyProjectFixture.get().residesOnModule
+      val interpreter = registerInterpreter("PY-88315 packages cached", home, disposable)
+      module.useInterpreter(interpreter)
+      val service = project.service<PythonPackageManagerService>()
 
-    val manager = service.forSdk(project, sdk)
+      val manager = service.forPythonInterpreter(project, interpreter)
 
-    assertThat(service.forSdk(project, sdk)).isSameAs(manager)
-  }
+      assertThat(service.forPythonInterpreter(project, interpreter)).isSameAs(manager)
+    }
 
   @Test
   fun `the paths of an interpreter in use are watched`(@TempDir home: Path, @TestDisposable disposable: Disposable): Unit =
     timeoutRunBlocking(1.minutes) {
       val project = projectFixture.get()
-      val module = moduleFixture.get()
-      val sdk = registerSdk("PY-88315 packages watched", home, disposable)
-      module.useSdk(sdk)
+      val module = pyProjectFixture.get().residesOnModule
+      val interpreter = registerInterpreter("PY-88315 packages watched", home, disposable)
+      module.useInterpreter(interpreter)
       val service = project.service<PythonPackageManagerService>()
 
-      service.forSdk(project, sdk)
+      service.forPythonInterpreter(project, interpreter)
 
-      service.awaitWatcher(sdk, watched = true)
+      service.awaitWatcher(interpreter, watched = true)
     }
 
   @Test
@@ -80,15 +84,15 @@ internal class PythonPackageManagerUnusedSdkTest {
     @TestDisposable disposable: Disposable,
   ): Unit = timeoutRunBlocking(1.minutes) {
     val project = projectFixture.get()
-    moduleFixture.get()
-    val sdk = registerSdk("PY-88315 packages of nobody", home, disposable)
+    pyProjectFixture.get().residesOnModule
+    val interpreter = registerInterpreter("PY-88315 packages of nobody", home, disposable)
     val service = project.service<PythonPackageManagerService>()
 
-    service.forSdk(project, sdk)
+    service.forPythonInterpreter(project, interpreter)
 
     // The structure has landed, so an absent watcher is a decision and not a moment before one
-    project.service<EvoPyProjectModel>().snapshot()
-    assertThat(service.impl().watchesInterpreterPaths(sdk)).isFalse()
+    EvoPyProjectModel.getInstance(project).snapshot()
+    assertThat(service.impl().watchesInterpreterPaths(interpreter.sdk)).isFalse()
   }
 
   /**
@@ -100,17 +104,17 @@ internal class PythonPackageManagerUnusedSdkTest {
     @TestDisposable disposable: Disposable,
   ): Unit = timeoutRunBlocking(1.minutes) {
     val project = projectFixture.get()
-    val module = moduleFixture.get()
-    val sdk = registerSdk("PY-88315 packages attached later", home, disposable)
+    val module = pyProjectFixture.get().residesOnModule
+    val interpreter = registerInterpreter("PY-88315 packages attached later", home, disposable)
     val service = project.service<PythonPackageManagerService>()
-    val manager = service.forSdk(project, sdk)
-    project.service<EvoPyProjectModel>().snapshot()
-    assertThat(service.impl().watchesInterpreterPaths(sdk)).isFalse()
+    val manager = service.forPythonInterpreter(project, interpreter)
+    EvoPyProjectModel.getInstance(project).snapshot()
+    assertThat(service.impl().watchesInterpreterPaths(interpreter.sdk)).isFalse()
 
-    module.useSdk(sdk)
+    module.useInterpreter(interpreter)
 
-    service.awaitWatcher(sdk, watched = true)
-    assertThat(service.forSdk(project, sdk)).describedAs("The manager a caller holds must survive the move").isSameAs(manager)
+    service.awaitWatcher(interpreter, watched = true)
+    assertThat(service.forPythonInterpreter(project, interpreter)).describedAs("The manager a caller holds must survive the move").isSameAs(manager)
   }
 
   @Test
@@ -119,17 +123,17 @@ internal class PythonPackageManagerUnusedSdkTest {
     @TestDisposable disposable: Disposable,
   ): Unit = timeoutRunBlocking(1.minutes) {
     val project = projectFixture.get()
-    val module = moduleFixture.get()
-    val sdk = registerSdk("PY-88315 packages left behind", home.resolve("old"), disposable)
-    module.useSdk(sdk)
+    val module = pyProjectFixture.get().residesOnModule
+    val interpreter = registerInterpreter("PY-88315 packages left behind", home.resolve("old"), disposable)
+    module.useInterpreter(interpreter)
     val service = project.service<PythonPackageManagerService>()
-    val manager = service.forSdk(project, sdk)
-    service.awaitWatcher(sdk, watched = true)
+    val manager = service.forPythonInterpreter(project, interpreter)
+    service.awaitWatcher(interpreter, watched = true)
 
-    module.useSdk(registerSdk("PY-88315 packages the new one", home.resolve("new"), disposable))
+    module.useInterpreter(registerInterpreter("PY-88315 packages the new one", home.resolve("new"), disposable))
 
-    service.awaitWatcher(sdk, watched = false)
-    assertThat(service.forSdk(project, sdk)).describedAs("The manager a caller holds must survive the move").isSameAs(manager)
+    service.awaitWatcher(interpreter, watched = false)
+    assertThat(service.forPythonInterpreter(project, interpreter)).describedAs("The manager a caller holds must survive the move").isSameAs(manager)
   }
 
   /**
@@ -144,16 +148,16 @@ internal class PythonPackageManagerUnusedSdkTest {
     @TestDisposable disposable: Disposable,
   ): Unit = timeoutRunBlocking(1.minutes) {
     val project = projectFixture.get()
-    val module = moduleFixture.get()
-    val sdk = registerSdk("PY-88315 packages of a doomed interpreter", home, disposable)
-    module.useSdk(sdk)
+    val module = pyProjectFixture.get().residesOnModule
+    val interpreter = registerInterpreter("PY-88315 packages of a doomed interpreter", home, disposable)
+    module.useInterpreter(interpreter)
     val service = project.service<PythonPackageManagerService>()
-    service.forSdk(project, sdk)
-    service.awaitWatcher(sdk, watched = true)
+    service.forPythonInterpreter(project, interpreter)
+    service.awaitWatcher(interpreter, watched = true)
 
     val watcherGone = AtomicBoolean()
-    Disposer.register(service.impl().interpreterPathsWatcher(sdk)!!, Disposable { watcherGone.set(true) })
-    WriteAction.runAndWait<RuntimeException> { ProjectJdkTable.getInstance().removeJdk(sdk) }
+    Disposer.register(service.impl().interpreterPathsWatcher(interpreter.sdk)!!, Disposable { watcherGone.set(true) })
+    WriteAction.runAndWait<RuntimeException> { ProjectJdkTable.getInstance().removeJdk(interpreter.sdk) }
 
     assertThat(watcherGone.get()).describedAs("The watcher outlived the interpreter it watches").isTrue()
   }
@@ -169,15 +173,15 @@ internal class PythonPackageManagerUnusedSdkTest {
     @TestDisposable disposable: Disposable,
   ): Unit = timeoutRunBlocking(1.minutes) {
     val project = projectFixture.get()
-    val module = moduleFixture.get()
-    val sdk = registerSdk("PY-89433 packages of a closed project", home, disposable)
-    module.useSdk(sdk)
+    val module = pyProjectFixture.get().residesOnModule
+    val interpreter = registerInterpreter("PY-89433 packages of a closed project", home, disposable)
+    module.useInterpreter(interpreter)
     val service = project.service<PythonPackageManagerService>()
-    service.forSdk(project, sdk)
-    service.awaitWatcher(sdk, watched = true)
+    service.forPythonInterpreter(project, interpreter)
+    service.awaitWatcher(interpreter, watched = true)
 
     val watcherGone = AtomicBoolean()
-    Disposer.register(service.impl().interpreterPathsWatcher(sdk)!!, Disposable { watcherGone.set(true) })
+    Disposer.register(service.impl().interpreterPathsWatcher(interpreter.sdk)!!, Disposable { watcherGone.set(true) })
     Disposer.dispose(service.impl())
 
     assertThat(watcherGone.get()).describedAs("The watcher outlived the project that owns it").isTrue()
@@ -186,13 +190,14 @@ internal class PythonPackageManagerUnusedSdkTest {
   private fun PythonPackageManagerService.impl(): PythonPackageManagerServiceImpl = this as PythonPackageManagerServiceImpl
 
   /** The structure is published on a flow, so a watcher appears and goes after the change, not with it. */
-  private suspend fun PythonPackageManagerService.awaitWatcher(sdk: Sdk, watched: Boolean) {
-    while (impl().watchesInterpreterPaths(sdk) != watched) {
+  private suspend fun PythonPackageManagerService.awaitWatcher(interpreter: PythonInterpreter, watched: Boolean) {
+    while (impl().watchesInterpreterPaths(interpreter.sdk) != watched) {
       delay(50.milliseconds)
     }
   }
 
-  private fun registerSdk(name: String, home: Path, disposable: Disposable): Sdk {
+  /** Registers an SDK and returns its interpreter, as a caller of the service holds one. */
+  private suspend fun registerInterpreter(name: String, home: Path, disposable: Disposable): PythonInterpreter {
     val sdk = ProjectJdkImpl(name, PythonSdkType.getInstance())
     val modificator = sdk.sdkModificator
     modificator.homePath = home.resolve("bin").resolve("python").toString()
@@ -201,10 +206,15 @@ internal class PythonPackageManagerUnusedSdkTest {
       modificator.commitChanges()
       ProjectJdkTable.getInstance().addJdk(sdk, disposable)
     }
-    return sdk
+    return sdk.pythonInterpreterAsync()
   }
 
-  private fun Module.useSdk(sdk: Sdk) {
-    WriteAction.runAndWait<RuntimeException> { ModuleRootModificationUtil.setModuleSdk(this, sdk) }
+  private fun Module.useInterpreter(interpreter: PythonInterpreter) {
+    WriteAction.runAndWait<RuntimeException> { ModuleRootModificationUtil.setModuleSdk(this, interpreter.sdk) }
   }
+
+  /** The SDK of the interpreter, for the platform calls and the watcher checks, which take one. */
+  @Suppress("DEPRECATION")
+  private val PythonInterpreter.sdk: Sdk get() = getSdkAPI()
+
 }

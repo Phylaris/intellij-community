@@ -1651,7 +1651,7 @@ class ListPluginComponent private constructor(
       val result = Dimension(myNameComponent!!.preferredSize)
 
       if (myProgressComponent == null) {
-        if (myCheckBoxComponent != null && myCheckBoxComponent!!.isVisible) {
+        if (myCheckBoxComponent?.isVisible == true) {
           val size = myCheckBoxComponent!!.preferredSize
           result.width += size.width + myHOffset.get()
           result.height = Math.max(result.height, size.height)
@@ -1716,7 +1716,7 @@ class ListPluginComponent private constructor(
       var x = insets.left
       var y = insets.top
 
-      if (myProgressComponent == null && myCheckBoxComponent != null && myCheckBoxComponent!!.isVisible) {
+      if (myProgressComponent == null && myCheckBoxComponent?.isVisible == true) {
         val size = myCheckBoxComponent!!.preferredSize
         val checkBoxY = if (myUseUnifiedRowLayout) {
           insets.top + (maxOf(myUnifiedControlSlotHeight.get(), size.height) - size.height) / 2
@@ -1866,7 +1866,7 @@ class ListPluginComponent private constructor(
         return width - myProgressComponent!!.preferredSize.width - myHOffset.get()
       }
 
-      if (myCheckBoxComponent != null && myCheckBoxComponent!!.isVisible) {
+      if (myCheckBoxComponent?.isVisible == true) {
         width -= myCheckBoxComponent!!.preferredSize.width + myHOffset.get()
       }
 
@@ -2199,6 +2199,7 @@ class ListPluginComponent private constructor(
     ): PluginRowRenderKey {
       val compatible = !plugin.isIncompatibleWithCurrentPlatform
       val available = (compatible || installationState.fullyInstalled && pluginEnabled) && plugin.canBeEnabled
+
       @Suppress("HardCodedStringLiteral")
       val tags = if (restrictedByProduct) {
         listOf(if (PlatformUtils.isPyCharmPro()) Tags.Pro.name else Tags.Ultimate.name)
@@ -2337,9 +2338,14 @@ class ListPluginComponent private constructor(
     }
 
     internal fun shouldHidePluginUpdateSourceUI(installationState: PluginInstallationState?): Boolean {
-      return installationState == null ||
-             !installationState.fullyInstalled ||
-             installationState.status == PluginStatus.UNINSTALLED_WITHOUT_RESTART
+      return when {
+        installationState == null -> true
+        installationState.status == PluginStatus.UNINSTALLED_WITHOUT_RESTART -> true
+        installationState.fullyInstalled -> false
+        installationState.status == PluginStatus.INSTALLED_WITHOUT_RESTART -> false
+        installationState.status == PluginStatus.INSTALLED_AND_REQUIRED_RESTART -> false
+        else -> true
+      }
     }
   }
 }

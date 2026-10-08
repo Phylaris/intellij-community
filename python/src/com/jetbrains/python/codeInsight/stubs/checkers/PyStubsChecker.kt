@@ -1,6 +1,9 @@
 // Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.jetbrains.python.codeInsight.stubs.checkers
 
+import com.intellij.python.sdk.backend.getSdkAPI
+import com.intellij.python.sdk.backend.pythonInterpreterAsync
+import com.intellij.python.sdk.backend.PythonInterpreter
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.progress.runBlockingMaybeCancellable
@@ -19,9 +22,9 @@ internal abstract class PyStubsChecker(val project: Project) : Disposable.Defaul
 
   init {
     project.messageBus.connect(this).subscribe(PythonPackageManager.PACKAGE_MANAGEMENT_TOPIC, object : PythonPackageManagementListener {
-      override fun packagesChanged(sdk: Sdk) {
+      override fun packagesChanged(interpreter: PythonInterpreter) {
         PyPackageCoroutine.launch(project, NON_INTERACTIVE_ROOT_TRACE_CONTEXT) {
-          checkSdk(sdk)
+          check(PythonPackageManager.forPythonInterpreter(project, interpreter))
         }
       }
 
@@ -30,7 +33,8 @@ internal abstract class PyStubsChecker(val project: Project) : Disposable.Defaul
     project.sdks.filter { PythonSdkUtil.isPythonSdk(it) }.forEach { startCheckForSdk(it) }
   }
 
-  fun getCached(sdk: Sdk): Set<PyPackageStubLink> = sdk.getUserData(key) ?: emptySet()
+  /** The stubs suggested for [interpreter], or none before the first check. */
+  fun getCached(interpreter: PythonInterpreter): Set<PyPackageStubLink> = interpreter.stubsHolder.getUserData(key) ?: emptySet()
 
   protected abstract suspend fun detectSuggestedStubs(packageManager: PythonPackageManager): List<PyPackageStubLink>
 
@@ -51,7 +55,19 @@ internal abstract class PyStubsChecker(val project: Project) : Disposable.Defaul
   }
 
   private suspend fun checkSdk(sdk: Sdk) {
-    val suggested = detectSuggestedStubs(PythonPackageManager.forSdk(project, sdk)).toSet()
-    sdk.putUserData(key, suggested)
+    check(PythonPackageManager.forPythonInterpreter(project, sdk.pythonInterpreterAsync()))
+  }
+
+  /** Stores the stubs [packageManager] suggests for its interpreter, where [getCached] reads them. */
+  private suspend fun check(packageManager: PythonPackageManager) {
+    val suggested = detectSuggestedStubs(packageManager).toSet()
+    packageManager.interpreter.stubsHolder.putUserData(key, suggested)
   }
 }
+
+/**
+ * The object that holds the stubs of this interpreter. The interpreter wrapper is new on each call, so the stubs live on
+ * its SDK, which is the same object for every wrapper.
+ */
+private val PythonInterpreter.stubsHolder: Sdk
+  @Suppress("DEPRECATION") get() = getSdkAPI()

@@ -5,36 +5,22 @@ import com.intellij.diagnostic.WindowsDefenderChecker
 import com.intellij.ide.RecentProjectsManager
 import com.intellij.ide.RecentProjectsManagerBase
 import com.intellij.ide.impl.OpenProjectTask
-import com.intellij.ide.util.PropertiesComponent
 import com.intellij.ide.util.TipAndTrickManager
 import com.intellij.openapi.components.serviceAsync
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.platform.PlatformProjectOpenProcessor
 import com.intellij.platform.PlatformProjectOpenProcessor.Companion.configureToOpenDotIdeaOrCreateNewIfNotExists
-import java.io.IOException
-import java.nio.file.LinkOption
 import java.nio.file.Path
-import kotlin.io.path.createDirectories
-import kotlin.io.path.exists
 
 private val LOG = logger<WelcomeScreenProjectSupportImpl>()
 
 internal class WelcomeScreenProjectSupportImpl : WelcomeScreenProjectSupport {
-  private fun surveySupport() {
-    val properties = PropertiesComponent.getInstance()
-    if (properties.getLong("projectless.survey.time", 0) == 0L) {
-      properties.setValue("projectless.survey.time", System.currentTimeMillis().toString())
-    }
-  }
-
   override suspend fun createOrOpenWelcomeScreenProject(
     extension: WelcomeScreenProjectProvider,
     projectToClose: Project?,
     forceOpenInNewFrame: Boolean,
   ): Project {
-    surveySupport()
-
     val simpleProject = extension.createSimpleProject(projectToClose, forceOpenInNewFrame)
     if (simpleProject != null) {
       return simpleProject
@@ -42,13 +28,6 @@ internal class WelcomeScreenProjectSupportImpl : WelcomeScreenProjectSupport {
 
     val projectPath = extension.getWelcomeScreenProjectPathForInternalUsage()
 
-    if (!projectPath.exists(LinkOption.NOFOLLOW_LINKS)) {
-      try {
-        projectPath.createDirectories()
-      }
-      catch (_: IOException) {
-      }
-    }
     // the path is a system path, so TrustedProjects trusts it implicitly, without a persistent record
     serviceAsync<WindowsDefenderChecker>().markProjectPath(projectPath, /*skip =*/ true)
 

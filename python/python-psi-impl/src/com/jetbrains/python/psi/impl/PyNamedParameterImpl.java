@@ -242,10 +242,12 @@ public class PyNamedParameterImpl extends PyBaseElementImpl<PyNamedParameterStub
           }
         }
         if (isKeywordContainer()) {
-          return PyTypeUtil.toKeywordContainerType(this, PyAnyType.getUnknown());
+          final PyType keywordContainerType = PyTypeUtil.toKeywordContainerType(this, PyAnyType.getUnknown());
+          return keywordContainerType != null ? keywordContainerType : PyAnyType.getUnknown();
         }
         if (isPositionalContainer()) {
-          return PyTypeUtil.toPositionalContainerType(this, PyAnyType.getUnknown());
+          final PyType positionalContainerType = PyTypeUtil.toPositionalContainerType(this, PyAnyType.getUnknown());
+          return positionalContainerType != null ? positionalContainerType : PyAnyType.getUnknown();
         }
         if (context.maySwitchToAST(this)) {
           final PyExpression defaultValue = getDefaultValue();
@@ -287,11 +289,9 @@ public class PyNamedParameterImpl extends PyBaseElementImpl<PyNamedParameterStub
             return assumedResult;
           }
         }
-        if (context.maySwitchToAST(this)) {
-          final PyType typeFromUsages = getTypeFromUsages(context, new HashSet<>());
-          if (typeFromUsages != null) {
-            return typeFromUsages;
-          }
+        final PyType typeFromUsages = getTypeFromUsages(context, new HashSet<>());
+        if (typeFromUsages != null) {
+          return typeFromUsages;
         }
       }
     }
@@ -338,7 +338,7 @@ public class PyNamedParameterImpl extends PyBaseElementImpl<PyNamedParameterStub
   }
 
   private @Nullable PyType getTypeFromUsages(@NotNull TypeEvalContext context, @NotNull Set<PyNamedParameter> visited) {
-    if (!visited.add(this)) return null;
+    if (!context.maySwitchToAST(this) || !visited.add(this)) return null;
 
     final Set<String> usedAttributes = new LinkedHashSet<>();
     final ScopeOwner owner = ScopeUtil.getScopeOwner(this);

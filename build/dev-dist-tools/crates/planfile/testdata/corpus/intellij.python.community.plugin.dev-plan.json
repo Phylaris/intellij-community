@@ -1,8 +1,7 @@
 {
     "version": 2,
     "plugin": "intellij.python.community.plugin",
-    "variant": "",
-    "layoutSignature": "15xpwdadcfoobu9juepsknci4",
+    "variant": "{platform}",
     "assets": [
         {
             "module": "intellij.python.community.common"
@@ -260,9 +259,6 @@
             }
         },
         {
-            "module": "intellij.python.community.impl.huggingFace"
-        },
-        {
             "module": "intellij.python.community.plugin.impl"
         },
         {
@@ -436,47 +432,26 @@
         {
             "destination": "helpers",
             "inputs": [
-                "layout-assets:resource-generator:0:output"
+                "module-resource:resource-generator:0:0:source"
             ],
             "kind": "tree",
             "classPath": false
-        }
-    ],
-    "preparations": [
+        },
         {
-            "id": "layout-assets:resource-generator:0",
+            "destination": "pyrefly/license",
             "inputs": [
-                "module-resource:resource-generator:0:0:source"
+                "layout-source:resource-generator:1:0"
             ],
-            "outputs": [
-                "layout-assets:resource-generator:0:output"
-            ],
-            "modelSignature": "5b8b0p3zxt1wre0xihc1bmgdp"
-        }
-    ],
-    "operations": [
+            "kind": "tree",
+            "classPath": false
+        },
         {
-            "id": "layout-assets:resource-generator:0",
-            "kind": "layout-assets",
+            "destination": "{platform:destination}",
             "inputs": [
-                {
-                    "artifact": "module-resource:resource-generator:0:0:source"
-                }
+                "layout-source:platform-resource-generator:0:0"
             ],
-            "output": "layout-assets:resource-generator:0:output",
-            "manifest": "keep",
-            "layoutAssets": {
-                "format": "tree",
-                "root": "helpers",
-                "assets": [
-                    {
-                        "destination": "",
-                        "sources": [
-                            0
-                        ]
-                    }
-                ]
-            }
+            "mode": 493,
+            "classPath": false
         }
     ]
 }

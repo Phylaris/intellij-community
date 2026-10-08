@@ -15,9 +15,9 @@ import org.jetbrains.annotations.ApiStatus
 //   TerminalGrid.kt          the grid to read back: TerminalSize, Cell (+ CellStyle, CellWidth,
 //                            TerminalColor, Underline), TerminalRow and its StyledText projection
 //                            (+ StyleRange, HyperlinkRange)
-//   TerminalResizePolicy.kt  ScrollbackPullPolicy — how a growing resize treats scrollback
 //   TerminalCursor.kt        Cursor, CursorShape
 //   TerminalMouseModes.kt    MouseProtocol, MouseEncoding
+//   TerminalKeyboardModes.kt KittyKeyboardFlag — the Kitty keyboard protocol flags
 //   TerminalKeyEvents.kt     TerminalKeyEvent (+ TerminalKey, TerminalKeyAction) — key events to
 //                            encode into PTY bytes
 //   TerminalMouseEvents.kt   TerminalMouseEvent (+ TerminalMouseAction, TerminalMouseButton)
@@ -59,11 +59,20 @@ interface TerminalEmulator : AutoCloseable {
   fun resize(size: TerminalSize)
 
   /**
-   * Sets the policy for whether growing the row count on [resize] pulls rows back from
-   * scrollback.
-   * See [ScrollbackPullPolicy]. The default is [ScrollbackPullPolicy.CURSOR_AT_BOTTOM].
+   * Sets whether [resize] may pull rows from scrollback back onto the screen. The default is `true`.
+   *
+   * With `true`, a row growth pulls rows back when the cursor is on the bottom row.
+   * A column reflow that needs fewer rows also pulls rows back.
+   *
+   * With `false`, a row growth adds blank rows at the bottom, and the cursor keeps its row.
+   * A column reflow keeps the same content on the top screen row.
+   * A soft-wrapped line that still has a row on the screen can still unwrap back into view.
+   *
+   * Use `false` when the PTY keeps its own screen buffer without scrollback.
+   * Windows ConPTY is the motivating case.
+   * A full reset (RIS) keeps this setting.
    */
-  fun setResizeScrollbackPullPolicy(policy: ScrollbackPullPolicy)
+  fun setResizePullScrollback(pull: Boolean)
 
   // screen state (always current)
   val cursor: Cursor
@@ -171,6 +180,13 @@ interface TerminalEmulator : AutoCloseable {
   val mouseProtocol: MouseProtocol
   val mouseEncoding: MouseEncoding
 
+  /**
+   * The flags of the Kitty keyboard protocol the program has enabled; empty while the
+   * protocol is off. While any flag is set, [encodeKeyEvent] encodes every key as the
+   * protocol prescribes.
+   */
+  val kittyKeyboardFlags: Set<KittyKeyboardFlag>
+
   // encoding input into PTY bytes
   /**
    * Encodes [event] into the bytes the embedder should write to the PTY, honoring the terminal's
@@ -179,6 +195,15 @@ interface TerminalEmulator : AutoCloseable {
    * outside the Kitty protocol, an event mid-IME-composition.
    */
   fun encodeKeyEvent(event: TerminalKeyEvent): ByteArray
+
+  /**
+   * Sets whether the macOS Option key acts as Alt in [encodeKeyEvent]. With `false`, the
+   * default, Option composes text ("ƒ" for Option+F) and the text is sent. With `true`,
+   * Option is the Alt modifier: an ESC prefix in legacy mode, and the Alt bit in the
+   * `modifyOtherKeys` and Kitty encodings, which then carry no text. Has no effect on the
+   * other platforms, where Alt is a modifier in any case.
+   */
+  fun setOptionAsAlt(enabled: Boolean)
 
   /**
    * Encodes [event] into the bytes the embedder should write to the PTY, honoring the terminal's
@@ -206,10 +231,19 @@ interface TerminalEmulator : AutoCloseable {
   fun screenLine(row: Int): TerminalRow
 
   /**
+   * Whether row [row] of the active screen soft-wraps into the next one: the [TerminalRow.wrapped] of
+   * [screenLine], but without reading the cells. Out-of-range indices yield `false`.
+   */
+  fun isScreenLineWrapped(row: Int): Boolean
+
+  /**
    * Row [row] of scrollback, 0-based from the oldest retained line (valid range:
    * `0 until scrollbackRows`). Out-of-range indices yield a row of empty cells rather than throwing.
    */
   fun scrollbackLine(row: Int): TerminalRow
+
+  /** The same as [isScreenLineWrapped], for row [row] of [scrollbackLine]. */
+  fun isScrollbackLineWrapped(row: Int): Boolean
 
   // change tracking (pull); resets the pending set
   fun takeChanges(): ScreenChange

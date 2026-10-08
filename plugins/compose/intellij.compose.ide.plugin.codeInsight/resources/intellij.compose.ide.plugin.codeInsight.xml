@@ -27,10 +27,12 @@
     <module name="intellij.platform.core.impl"/>
     <module name="intellij.platform.editor.ui"/>
     <module name="intellij.platform.externalSystem.impl"/>
+    <module name="intellij.platform.ide.colorPicker"/>
     <module name="intellij.platform.ide.impl"/>
     <module name="intellij.platform.lang"/>
     <module name="intellij.platform.lang.core"/>
     <module name="intellij.platform.lang.impl"/>
+    <module name="intellij.platform.monolith"/>
     <module name="intellij.platform.projectModel"/>
     <module name="intellij.platform.uast"/>
     <module name="intellij.platform.util.ui"/>
@@ -38,6 +40,7 @@
   <!-- endregion -->
 
   <extensions defaultExtensionNs="org.jetbrains.kotlin">
+    <codeinsight.quickfix.registrar implementation="com.intellij.compose.ide.plugin.codeInsight.intentions.ComposableQuickFixesRegistrar"/>
     <callHighlighterExtension
       implementation="com.intellij.compose.ide.plugin.codeInsight.highlighting.ComposableFunctionCallHighlighterExtension"/>
     <extractFunctionDescriptorModifier implementation="com.intellij.compose.ide.plugin.codeInsight.ComposableAnnotationToExtractedFunctionAdder"
@@ -55,6 +58,7 @@
     <additionalTextAttributes scheme="Darcula" file="colorSchemes/IntelliJComposeColorSchemeDarcula.xml"/>
     <codeInsight.lineMarkerProvider language="kotlin"
                                     implementationClass="com.intellij.compose.ide.plugin.codeInsight.lineMarkers.ComposeColorLineMarkerProviderDescriptor"/>
+    <lang.foldingBuilder language="kotlin" implementationClass="com.intellij.compose.ide.plugin.codeInsight.folding.ComposeFoldingBuilder"/>
     <codeInsight.unresolvedReferenceQuickFixProvider
       implementation="com.intellij.compose.ide.plugin.codeInsight.intentions.AddComposeRuntimeQuickFixProvider"/>
     <completion.contributor language="kotlin"

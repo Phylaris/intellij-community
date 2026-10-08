@@ -26,8 +26,9 @@
   ],
 
   "allow": [
-    ["./plugins/air/scripts/bt.cmd"],
-    ["./plugins/air/scripts/vm.cmd"],
+    ["{{TOOLS_DIR}}/bt.cmd"],
+    ["./community/tools/vm.cmd"],
+    ["./community/tools/trace.cmd"],
     ["./platform/daemon/devex/latest-nighly-build-number.sh"],
     ["./tests.cmd"],
     ["./community/tests.cmd"],
@@ -66,6 +67,7 @@
     ["git", "rev-list"],
     ["git", "rev-parse"],
     ["git", "check-ignore"],
+    ["git", "config", "--get", "user.email"],
     ["git", "fetch"],
     ["git", "add"],
     ["git", "commit"],

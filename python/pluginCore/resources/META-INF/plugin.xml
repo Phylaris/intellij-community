@@ -65,6 +65,8 @@ The Python plug-in provides smart editing for Python scripts. The feature set of
     <module name="intellij.python.ruff.frontend"/>
     <module name="intellij.python.ty.common"/>
     <module name="intellij.python.ty.frontend"/>
+    <module name="intellij.python.zuban.common"/>
+    <module name="intellij.python.zuban.frontend"/>
 
     <!-- Backend-only modules: load only when intellij.platform.backend is available -->
     <module name="intellij.python.psi"/>
@@ -104,7 +106,6 @@ The Python plug-in provides smart editing for Python scripts. The feature set of
     <module name="intellij.python.community.plugin.minorRider"/> <!-- Python special support for Rider -->
     <module name="intellij.python.community.communityOnly" loading="optional"/> <!-- Community-specific code-->
     <module name="intellij.commandInterface"/> <!-- used by Django in Prof, by some plugins in community -->
-    <module name="intellij.python.community.impl.huggingFace"/>
     <module name="intellij.python.community.plugin.impl"/><!--Python for any IDE except PyCharm -->
     <module name="intellij.python.community.plugin.java"/><!-- Python for Java IDE -->
     <module name="intellij.python.copyright"/>
@@ -128,6 +129,7 @@ The Python plug-in provides smart editing for Python scripts. The feature set of
     <module name="intellij.python.ruff"/>
     <module name="intellij.python.pyrefly"/>
     <module name="intellij.python.pyright"/>
+    <module name="intellij.python.zuban"/>
   </content>
   <content>
     <module name="intellij.libraries.jsr305"/>

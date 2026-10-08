@@ -296,11 +296,6 @@ c:com.intellij.execution.actions.ConfigurationFromContextImpl
 - onFirstRun(com.intellij.execution.actions.ConfigurationContext,java.lang.Runnable):V
 - setConfigurationSettings(com.intellij.execution.RunnerAndConfigurationSettings):V
 - shouldReplace(com.intellij.execution.actions.ConfigurationFromContext):Z
-a:com.intellij.execution.actions.ConsoleActionsPostProcessor
-- sf:EP_NAME:com.intellij.openapi.extensions.ExtensionPointName
-- <init>():V
-- postProcess(com.intellij.execution.ui.ConsoleView,com.intellij.openapi.actionSystem.AnAction[]):com.intellij.openapi.actionSystem.AnAction[]
-- postProcessPopupActions(com.intellij.execution.ui.ConsoleView,com.intellij.openapi.actionSystem.AnAction[]):com.intellij.openapi.actionSystem.AnAction[]
 a:com.intellij.execution.actions.LazyRunConfigurationProducer
 - com.intellij.execution.actions.RunConfigurationProducer
 - <init>():V
@@ -696,34 +691,6 @@ com.intellij.execution.executors.RunExecutorSettings
 - a:getStartActionText():java.lang.String
 - getStartActionText(java.lang.String):java.lang.String
 - a:isApplicable(com.intellij.openapi.project.Project):Z
-com.intellij.execution.filters.Filter
-- com.intellij.openapi.project.PossiblyDumbAware
-- sf:EMPTY_ARRAY:com.intellij.execution.filters.Filter[]
-- a:applyFilter(java.lang.String,I):com.intellij.execution.filters.Filter$Result
-e:com.intellij.execution.filters.Filter$NextAction
-- java.lang.Enum
-c:com.intellij.execution.filters.Filter$Result
-- com.intellij.execution.filters.Filter$ResultItem
-- <init>(java.util.List):V
-- getFirstHyperlinkInfo():com.intellij.execution.filters.HyperlinkInfo
-- getResultItems():java.util.List
-- setNextAction(com.intellij.execution.filters.Filter$NextAction):V
-c:com.intellij.execution.filters.Filter$ResultItem
-- getFollowedHyperlinkAttributes():com.intellij.openapi.editor.markup.TextAttributes
-- getHighlightAttributes():com.intellij.openapi.editor.markup.TextAttributes
-- getHighlightEndOffset():I
-- getHighlightStartOffset():I
-- getHyperlinkInfo():com.intellij.execution.filters.HyperlinkInfo
-a:com.intellij.execution.filters.TextConsoleBuilder
-- <init>():V
-- a:addFilter(com.intellij.execution.filters.Filter):V
-- filters(java.util.List):com.intellij.execution.filters.TextConsoleBuilder
-- filters(com.intellij.execution.filters.Filter[]):com.intellij.execution.filters.TextConsoleBuilder
-- a:getConsole():com.intellij.execution.ui.ConsoleView
-- a:setViewer(Z):V
-a:com.intellij.execution.filters.TextConsoleBuilderFactory
-- a:createBuilder(com.intellij.openapi.project.Project):com.intellij.execution.filters.TextConsoleBuilder
-- s:getInstance():com.intellij.execution.filters.TextConsoleBuilderFactory
 com.intellij.execution.impl.CheckableRunConfigurationEditor
 - a:checkEditorData(java.lang.Object):V
 a:com.intellij.execution.junit.RuntimeConfigurationProducer
@@ -751,9 +718,6 @@ a:com.intellij.execution.junit.RuntimeConfigurationProducer
 - p:restoreSourceElement():com.intellij.psi.PsiElement
 - setConfiguration(com.intellij.execution.RunnerAndConfigurationSettings):V
 - p:storeSourceElement(com.intellij.psi.PsiElement):V
-f:com.intellij.execution.processTools.ExecutionResult
-- f:getExitCode():I
-- f:getStdOut():B[]
 a:com.intellij.execution.rmi.RemoteProcessSupport
 - <init>(java.lang.Class):V
 - getActiveConfigurations(java.lang.Object):java.util.List
@@ -814,8 +778,6 @@ a:com.intellij.execution.runners.GenericProgramRunner
 - com.intellij.execution.runners.ProgramRunner
 - <init>():V
 - f:execute(com.intellij.execution.runners.ExecutionEnvironment):V
-f:com.intellij.execution.runners.IndicatorIcon
-- javax.swing.Icon
 com.intellij.execution.runners.ProcessProxy
 - a:attach(com.intellij.execution.process.ProcessHandler):V
 - canSendBreak():Z
@@ -999,42 +961,13 @@ com.intellij.execution.target.value.TargetValue
 - a:getLocalValue():org.jetbrains.concurrency.Promise
 - a:getTargetValue():org.jetbrains.concurrency.Promise
 - s:map(com.intellij.execution.target.value.TargetValue,com.intellij.util.Function):com.intellij.execution.target.value.TargetValue
-com.intellij.execution.ui.ConsoleView
-- com.intellij.execution.ui.ExecutionConsole
-- a:addMessageFilter(com.intellij.execution.filters.Filter):V
-- a:allowHeavyFilters():V
-- a:attachToProcess(com.intellij.execution.process.ProcessHandler):V
-- a:canPause():Z
-- a:clear():V
-- a:createConsoleActions():com.intellij.openapi.actionSystem.AnAction[]
-- a:getContentSize():I
-- getPlace():com.intellij.execution.ui.ConsoleViewPlace
-- a:hasDeferredOutput():Z
-- a:isOutputPaused():Z
-- a:performWhenNoDeferredOutput(java.lang.Runnable):V
-- a:print(java.lang.String,com.intellij.execution.ui.ConsoleViewContentType):V
-- a:printHyperlink(java.lang.String,com.intellij.execution.filters.HyperlinkInfo):V
-- requestScrollingToEnd():V
-- a:scrollTo(I):V
-- a:setHelpId(java.lang.String):V
-- a:setOutputPaused(Z):V
-c:com.intellij.execution.ui.ConsoleViewPlace
-- <init>(java.lang.String):V
 com.intellij.execution.ui.ConsoleViewWithDelegate
 - a:getDelegate():com.intellij.execution.ui.ConsoleView
-com.intellij.execution.ui.ExecutionConsole
-- com.intellij.openapi.ui.ComponentContainer
-- sf:CONSOLE_CONTENT_ID:java.lang.String
 com.intellij.execution.ui.ExecutionConsoleEx
 - com.intellij.execution.ui.ExecutionConsole
 - a:buildUi(com.intellij.execution.ui.RunnerLayoutUi):V
 - a:getExecutionConsoleId():java.lang.String
 com.intellij.execution.ui.NoStackTraceFoldingPanel
-com.intellij.execution.ui.ObservableConsoleView
-- a:addChangeListener(com.intellij.execution.ui.ObservableConsoleView$ChangeListener,com.intellij.openapi.Disposable):V
-com.intellij.execution.ui.ObservableConsoleView$ChangeListener
-- contentAdded(java.util.Collection):V
-- textAdded(java.lang.String,com.intellij.execution.ui.ConsoleViewContentType):V
 c:com.intellij.execution.ui.RunContentDescriptor
 - com.intellij.openapi.Disposable
 - dispose():V
@@ -1141,11 +1074,8 @@ f:com.intellij.openapi.actionSystem.ExecutionDataKeys
 - sf:CONSOLE_VIEW:com.intellij.openapi.actionSystem.DataKey
 - sf:RUN_CONTENT_DESCRIPTOR:com.intellij.openapi.actionSystem.DataKey
 - sf:RUN_PROFILE:com.intellij.openapi.actionSystem.DataKey
-com.intellij.openapi.projectRoots.JavaSdkType
-- a:getBinPath(com.intellij.openapi.projectRoots.Sdk):java.lang.String
-- a:getToolsPath(com.intellij.openapi.projectRoots.Sdk):java.lang.String
-- a:getVMExecutablePath(com.intellij.openapi.projectRoots.Sdk):java.lang.String
-- isDependent():Z
+f:com.intellij.openapi.projectRoots.JavaCommandLineCompositionUtil
+- s:setupJVMCommandLine(com.intellij.execution.configurations.SimpleJavaParameters):com.intellij.execution.configurations.GeneralCommandLine
 f:com.intellij.openapi.projectRoots.JdkCommandLineSetup
 - sf:Companion:com.intellij.openapi.projectRoots.JdkCommandLineSetup$Companion
 - <init>(com.intellij.execution.target.TargetEnvironmentRequest):V
@@ -1154,48 +1084,76 @@ f:com.intellij.openapi.projectRoots.JdkCommandLineSetup
 - f:setupCommandLine(com.intellij.execution.configurations.SimpleJavaParameters):V
 - f:setupJavaExePath(com.intellij.execution.configurations.SimpleJavaParameters):V
 f:com.intellij.openapi.projectRoots.JdkCommandLineSetup$Companion
-f:com.intellij.openapi.projectRoots.JdkUtil
-- sf:AGENT_RUNTIME_CLASSPATH:com.intellij.openapi.util.Key
-- sf:COMMAND_LINE_CONTENT:com.intellij.openapi.util.Key
-- sf:PROPERTY_DO_NOT_ESCAPE_CLASSPATH_URL:java.lang.String
-- s:checkForJdk(java.lang.String):Z
-- s:checkForJdk(java.nio.file.Path):Z
-- s:checkForJre(java.lang.String):Z
-- s:checkForJre(java.nio.file.Path):Z
-- s:getJdkMainAttribute(com.intellij.openapi.projectRoots.Sdk,java.util.jar.Attributes$Name):java.lang.String
-- s:isCompatible(com.intellij.openapi.projectRoots.Sdk,com.intellij.openapi.project.Project):Z
-- s:isCompatible(java.nio.file.Path,com.intellij.openapi.project.Project):Z
-- s:isExplodedModularRuntime(java.nio.file.Path):Z
-- s:isModularRuntime(java.lang.String):Z
-- s:isModularRuntime(java.nio.file.Path):Z
-- s:setupJVMCommandLine(com.intellij.execution.configurations.SimpleJavaParameters):com.intellij.execution.configurations.GeneralCommandLine
-- s:suggestJdkName(com.intellij.util.lang.JavaVersion,java.lang.String):java.lang.String
-- s:suggestJdkName(java.lang.String):java.lang.String
-- s:useClasspathJar():Z
-- s:useDynamicClasspath(com.intellij.openapi.project.Project):Z
-- s:useDynamicParameters():Z
-- s:useDynamicVMOptions():Z
-f:com.intellij.openapi.projectRoots.SimpleJavaSdkType
-- com.intellij.openapi.projectRoots.SdkType
-- com.intellij.openapi.projectRoots.JavaSdkType
-- <init>():V
-- createAdditionalDataConfigurable(com.intellij.openapi.projectRoots.SdkModel,com.intellij.openapi.projectRoots.SdkModificator):com.intellij.openapi.projectRoots.AdditionalDataConfigurable
-- createJdk(java.lang.String,java.lang.String):com.intellij.openapi.projectRoots.Sdk
-- getBinPath(com.intellij.openapi.projectRoots.Sdk):java.lang.String
-- s:getInstance():com.intellij.openapi.projectRoots.SimpleJavaSdkType
-- getPresentableName():java.lang.String
-- getToolsPath(com.intellij.openapi.projectRoots.Sdk):java.lang.String
-- getVMExecutablePath(com.intellij.openapi.projectRoots.Sdk):java.lang.String
-- getVersionString(java.lang.String):java.lang.String
-- isValidSdkHome(java.lang.String):Z
-- s:notSimpleJavaSdkType():java.util.function.Predicate
-- s:notSimpleJavaSdkType(java.util.function.Predicate):java.util.function.Predicate
-- s:notSimpleJavaSdkTypeIfAlternativeExists():java.util.function.Predicate
-- s:notSimpleJavaSdkTypeIfAlternativeExistsAndNotDependentSdkType():com.intellij.openapi.util.Condition
-- saveAdditionalData(com.intellij.openapi.projectRoots.SdkAdditionalData,org.jdom.Element):V
-- suggestHomePaths():java.util.Collection
-- suggestHomePaths(com.intellij.openapi.project.Project):java.util.Collection
-- suggestSdkName(java.lang.String,java.lang.String):java.lang.String
-- versionStringComparator():java.util.Comparator
 f:com.intellij.psi.search.ExecutionSearchScopes
 - s:executionScope(java.util.Collection):com.intellij.psi.search.GlobalSearchScope
+com.intellij.task.BuildTask
+- com.intellij.task.ProjectTask
+- a:isIncrementalBuild():Z
+com.intellij.task.EmptyCompileScopeBuildTask
+- com.intellij.task.BuildTask
+com.intellij.task.ExecuteRunConfigurationTask
+- com.intellij.task.ProjectTask
+- a:getConfigurationSettings():com.intellij.execution.configurations.ConfigurationPerRunnerSettings
+- a:getExecutionTarget():com.intellij.execution.ExecutionTarget
+- a:getRunProfile():com.intellij.execution.configurations.RunProfile
+- a:getRunnerSettings():com.intellij.execution.configurations.RunnerSettings
+- a:getSettings():com.intellij.execution.RunnerAndConfigurationSettings
+com.intellij.task.ModuleBuildTask
+- com.intellij.task.BuildTask
+- a:getModule():com.intellij.openapi.module.Module
+- a:isIncludeDependentModules():Z
+- a:isIncludeRuntimeDependencies():Z
+- isIncludeTests():Z
+com.intellij.task.ModuleFilesBuildTask
+- com.intellij.task.ModuleBuildTask
+- a:getFiles():com.intellij.openapi.vfs.VirtualFile[]
+com.intellij.task.ModuleResourcesBuildTask
+- com.intellij.task.ModuleBuildTask
+com.intellij.task.ProjectModelBuildTask
+- com.intellij.task.BuildTask
+- a:getBuildableElement():com.intellij.openapi.roots.ProjectModelBuildableElement
+com.intellij.task.ProjectTask
+- a:getPresentableName():java.lang.String
+c:com.intellij.task.ProjectTaskContext
+- com.intellij.openapi.util.UserDataHolderBase
+- <init>():V
+- <init>(java.lang.Object):V
+- <init>(java.lang.Object,com.intellij.execution.configurations.RunConfiguration,Z,com.intellij.openapi.actionSystem.DataContext):V
+- b:<init>(java.lang.Object,com.intellij.execution.configurations.RunConfiguration,Z,com.intellij.openapi.actionSystem.DataContext,I,kotlin.jvm.internal.DefaultConstructorMarker):V
+- f:getDataContext():com.intellij.openapi.actionSystem.DataContext
+- f:getDirtyOutputPaths():java.util.Optional
+- f:getRunConfiguration():com.intellij.execution.configurations.RunConfiguration
+- f:getSessionId():java.lang.Object
+- f:isAutoRun():Z
+- f:setCollectionOfGeneratedFilesEnabled(Z):V
+- f:withUserData(com.intellij.openapi.util.Key,java.lang.Object):com.intellij.task.ProjectTaskContext
+com.intellij.task.ProjectTaskListener
+- sf:TOPIC:com.intellij.util.messages.Topic
+- finished(com.intellij.task.ProjectTaskManager$Result):V
+- started(com.intellij.task.ProjectTaskContext):V
+Fa:com.intellij.task.ProjectTaskManager
+- a:build(com.intellij.openapi.module.Module[]):org.jetbrains.concurrency.Promise
+- a:build(com.intellij.openapi.roots.ProjectModelBuildableElement[]):org.jetbrains.concurrency.Promise
+- a:buildAllModules():org.jetbrains.concurrency.Promise
+- a:compile(com.intellij.openapi.vfs.VirtualFile[]):org.jetbrains.concurrency.Promise
+- s:getInstance(com.intellij.openapi.project.Project):com.intellij.task.ProjectTaskManager
+- a:rebuild(com.intellij.openapi.module.Module[]):org.jetbrains.concurrency.Promise
+- a:rebuildAllModules():org.jetbrains.concurrency.Promise
+- a:run(com.intellij.task.ProjectTask):org.jetbrains.concurrency.Promise
+com.intellij.task.ProjectTaskManager$Result
+- a:getContext():com.intellij.task.ProjectTaskContext
+- a:hasErrors():Z
+- a:isAborted():Z
+com.intellij.task.ProjectTaskNotification
+- finished(com.intellij.task.ProjectTaskContext,com.intellij.task.ProjectTaskResult):V
+- finished(com.intellij.task.ProjectTaskResult):V
+c:com.intellij.task.ProjectTaskResult
+- getErrors():I
+a:com.intellij.task.ProjectTaskRunner
+- <init>():V
+com.intellij.task.ProjectTaskRunner$Result
+- a:hasErrors():Z
+- a:isAborted():Z
+com.intellij.task.ProjectTaskState
+- a:isFailed():Z
+- a:isSkipped():Z

@@ -2,7 +2,6 @@
     "version": 2,
     "plugin": "intellij.gateway.plugin",
     "variant": "",
-    "layoutSignature": "bjqc5x44oq9xlqnt0sm8yu0fi",
     "assets": [
         {
             "module": "intellij.gateway.core"
@@ -18,9 +17,6 @@
         },
         {
             "module": "intellij.gateway.station"
-        },
-        {
-            "module": "intellij.gateway.eel"
         },
         {
             "module": "intellij.gateway.daemon.bridge"
@@ -51,31 +47,6 @@
                     },
                     {
                         "input": "intellij.platform.commercial.dependencies",
-                        "kind": "module",
-                        "filter": "module-v1"
-                    }
-                ],
-                "writer": {
-                    "mergeEntities": true
-                }
-            }
-        },
-        {
-            "destination": "lib/gateway-standalone/platform-resources.jar",
-            "recipe": {
-                "sources": [
-                    {
-                        "input": "intellij.platform.resources.fileTypes",
-                        "kind": "module",
-                        "filter": "module-v1"
-                    },
-                    {
-                        "input": "intellij.platform.resources.applicationInfo",
-                        "kind": "module",
-                        "filter": "module-v1"
-                    },
-                    {
-                        "input": "intellij.platform.resources.en.fileTemplates",
                         "kind": "module",
                         "filter": "module-v1"
                     }
@@ -130,18 +101,14 @@
             ],
             "mode": 493,
             "classPath": false
-        }
-    ],
-    "preparations": [
+        },
         {
-            "id": "layout-assets:resource-generator:0",
+            "destination": "resources/images",
             "inputs": [
-                "layout-source:resource-generator:0:0"
+                "layout-source:platform-resource-generator:0:0"
             ],
-            "outputs": [
-                "layout-assets:resource-generator:0:output"
-            ],
-            "modelSignature": "2tfdxmmkmlaogoczzzslqadil"
+            "kind": "tree",
+            "classPath": false
         }
     ],
     "operations": [

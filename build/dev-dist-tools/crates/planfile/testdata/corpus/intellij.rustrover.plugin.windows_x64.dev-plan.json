@@ -2,7 +2,6 @@
     "version": 2,
     "plugin": "intellij.rustrover.plugin",
     "variant": "windows_x64",
-    "layoutSignature": "b7wyxb348c2lthxuc7dxvfqvj",
     "assets": [
         {
             "destination": "lib/intellij.rustrover.common.jar",
@@ -190,18 +189,14 @@
             ],
             "kind": "tree",
             "classPath": false
-        }
-    ],
-    "preparations": [
+        },
         {
-            "id": "layout-assets:resource-generator:1",
+            "destination": "caches",
             "inputs": [
-                "rust-native-helper"
+                "layout-source:resource-generator:0:0"
             ],
-            "outputs": [
-                "layout-assets:resource-generator:1:output"
-            ],
-            "modelSignature": "dqxv3dyfvw27r1joqmz8abvlb"
+            "kind": "tree",
+            "classPath": false
         }
     ],
     "operations": [
@@ -210,10 +205,7 @@
             "kind": "layout-assets",
             "inputs": [
                 {
-                    "artifact": "rust-native-helper"
-                },
-                {
-                    "artifact": "rust-native-helper"
+                    "artifact": "layout-source:resource-generator:1:0"
                 }
             ],
             "output": "layout-assets:resource-generator:1:output",
@@ -243,7 +235,7 @@
                     {
                         "destination": "linux/x64",
                         "sources": [
-                            1
+                            0
                         ],
                         "transform": {
                             "kind": "archive-tree",

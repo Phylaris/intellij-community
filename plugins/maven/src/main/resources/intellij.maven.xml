@@ -31,8 +31,10 @@
     <module name="intellij.platform.backend.observation"/>
     <module name="intellij.platform.backend.workspace"/>
     <module name="intellij.platform.buildScripts.downloader"/>
+    <module name="intellij.platform.buildView"/>
     <module name="intellij.platform.codeStyle"/>
     <module name="intellij.platform.concurrency"/>
+    <module name="intellij.platform.consoleView"/>
     <module name="intellij.platform.core"/>
     <module name="intellij.platform.core.impl"/>
     <module name="intellij.platform.core.ui"/>
@@ -66,6 +68,7 @@
     <module name="intellij.platform.statistics"/>
     <module name="intellij.platform.testRunner"/>
     <module name="intellij.platform.usageView"/>
+    <module name="intellij.platform.util.annotations"/>
     <module name="intellij.platform.util.coroutines"/>
     <module name="intellij.platform.util.ex"/>
     <module name="intellij.platform.util.progress"/>
@@ -843,7 +846,6 @@
     <action id="Maven.AddFileAsMavenProject"
             class="org.jetbrains.idea.maven.project.actions.AddFileAsMavenProjectAction"
             icon="AllIcons.General.Add">
-      <add-to-group group-id="EditorPopupMenu" anchor="before" relative-to-action="Maven.GlobalProjectMenu"/>
       <add-to-group group-id="ProjectViewPopupMenu" anchor="before" relative-to-action="Maven.GlobalProjectMenu"/>
     </action>
 

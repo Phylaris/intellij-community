@@ -5,12 +5,14 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use anyhow::{Context as _, Result, anyhow, bail};
 use javaglob::JavaGlob;
-use planfile::contract::{LayoutAsset, LayoutAssets, LayoutTransform, LayoutTransformKind, Operation, Recipe, Reference, Source};
+use planfile::contract::{
+    ArtifactKind, LayoutAsset, LayoutAssets, LayoutTransform, LayoutTransformKind, Operation, Recipe, Reference, Source,
+};
 
-use crate::error::{Error, IoContext, Result, fail};
 use crate::execute::{Resolved, Resolver, resolve_directory_tree, resolve_transport_file};
-use crate::layout_archive::{EntryKind, LayoutArchive, gzip_member};
+use crate::layout_archive::{EntryKind, LayoutArchive};
 use crate::layout_writer::{Content, EntriesWriter, LayoutWriter, TreeWriter};
 use crate::paths;
 use crate::plan::{compile_globs, compile_includes, includes_entry, mapping_pattern};
@@ -23,14 +25,6 @@ const fn mode_or(mode: u32, fallback: u32) -> u32 {
 /// so each directory then gets 0755. Mode zero keeps the source mode.
 const fn copy_directory_mode(mode: u32) -> u32 {
     if mode == 0 { 0 } else { 0o755 }
-}
-
-pub(crate) fn join_layout_path(first: &str, second: &str) -> String {
-    match (first.is_empty(), second.is_empty()) {
-        (true, _) => second.to_owned(),
-        (_, true) => first.to_owned(),
-        _ => format!("{first}/{second}"),
-    }
 }
 
 /// Removes the leading components. A path with too few components is dropped.
@@ -58,11 +52,11 @@ impl LayoutScratch {
             return Ok(Self { root: None, count: 0 });
         }
         let parent = output.parent().unwrap_or(output);
-        fscopy::create_dirs_0755(parent)?;
+        filemeta::create_dir_all_0755(parent)?;
         let root = tempfile::Builder::new()
             .prefix(".plugin-layout-")
             .tempdir_in(parent)
-            .at(parent)?
+            .with_context(|| parent.display().to_string())?
             .keep();
         Ok(Self {
             root: Some(root),
@@ -70,15 +64,20 @@ impl LayoutScratch {
         })
     }
 
+    /// A scratch without a directory, for a reader that never decodes an archive.
+    pub(crate) const fn unavailable() -> Self {
+        Self { root: None, count: 0 }
+    }
+
     /// Creates one numbered directory with mode 0755.
     pub(crate) fn directory(&mut self, prefix: &str) -> Result<PathBuf> {
         let Some(root) = &self.root else {
-            fail!("layout scratch is not available");
+            bail!("layout scratch is not available");
         };
         self.count += 1;
         let directory = root.join(format!("{prefix}-{}", self.count));
-        paths::create_directory(&directory).at(&directory)?;
-        paths::set_mode(&directory, 0o755).at(&directory)?;
+        paths::create_directory(&directory).with_context(|| directory.display().to_string())?;
+        fscopy::set_mode(&directory, 0o755)?;
         Ok(directory)
     }
 
@@ -100,10 +99,10 @@ impl Drop for LayoutScratch {
 fn remove_writable_tree(root: &Path) -> Result<()> {
     for entry in walkdir::WalkDir::new(root).into_iter().flatten() {
         if entry.file_type().is_dir() {
-            let _ = paths::set_mode(entry.path(), 0o700);
+            let _ = fscopy::set_mode(entry.path(), 0o700);
         }
     }
-    fs::remove_dir_all(root).at(root)
+    fs::remove_dir_all(root).with_context(|| root.display().to_string())
 }
 
 /// One resolved layout input.
@@ -131,51 +130,31 @@ struct TreeEntry {
     metadata: fs::Metadata,
 }
 
-enum Walk {
-    Continue,
-    SkipDirectory,
-}
-
-/// Visits a directory in pre-order and raw directory order, the order of Kotlin's `Files.walk`. It does not sort and
-/// does not follow links. A visitor can skip the descendants of a directory.
-fn walk_layout_tree(root: &Path, mut visit: impl FnMut(TreeEntry) -> Result<Walk>) -> Result<()> {
-    let mut walker = walkdir::WalkDir::new(root).min_depth(1).into_iter();
-    while let Some(item) = walker.next() {
-        let item = item.map_err(|error| Error::new(error.to_string()))?;
-        let metadata = item.metadata().map_err(|error| Error::new(error.to_string()))?;
-        let relative = slash_relative(root, item.path())?;
-        let directory = metadata.is_dir();
-        let entry = TreeEntry {
+/// Lists a directory in pre-order and raw directory order, the order of Kotlin's `Files.walk`. It does not sort and
+/// does not follow links.
+fn walk_layout_tree(root: &Path) -> Result<Vec<TreeEntry>> {
+    let mut entries = Vec::new();
+    for item in walkdir::WalkDir::new(root).min_depth(1) {
+        let item = item.map_err(|error| paths::walk_error(&error))?;
+        let metadata = item.metadata().map_err(|error| paths::walk_error(&error))?;
+        let relative = item.path().strip_prefix(root).expect("a walk entry is below the walked root");
+        let Some(relative) = distpath::slash_path(relative) else {
+            bail!("unsupported layout source name: {}", item.path().display());
+        };
+        entries.push(TreeEntry {
             relative,
             full: item.path().to_path_buf(),
             metadata,
-        };
-        if matches!(visit(entry)?, Walk::SkipDirectory) && directory {
-            walker.skip_current_dir();
-        }
+        });
     }
-    Ok(())
-}
-
-fn slash_relative(root: &Path, path: &Path) -> Result<String> {
-    let Ok(relative) = path.strip_prefix(root) else {
-        return Err(Error::new(format!("{} is outside {}", path.display(), root.display())));
-    };
-    let mut parts = Vec::new();
-    for component in relative.components() {
-        match component.as_os_str().to_str() {
-            Some(part) => parts.push(part),
-            None => fail!("unsupported layout source name: {}", path.display()),
-        }
-    }
-    Ok(parts.join("/"))
+    Ok(entries)
 }
 
 /// Accepts a directory root and returns its physical path. A Bazel sandbox may mount an input directory as a link to
 /// the real artifact, so the root may be a link. The resolved path must be a directory.
 fn layout_directory(root: &str) -> Result<PathBuf> {
     let absolute = fscopy::absolute_path(Path::new(root))?;
-    let not_directory = |detail: &str| Error::new(format!("layout source is not a directory: {}{detail}", absolute.display()));
+    let not_directory = |detail: &str| anyhow!("layout source is not a directory: {}{detail}", absolute.display());
     let resolved = fscopy::real_path(&absolute).map_err(|error| not_directory(&format!(": {error}")))?;
     if !fs::symlink_metadata(&resolved).is_ok_and(|metadata| metadata.is_dir()) {
         return Err(not_directory(""));
@@ -194,12 +173,12 @@ fn copy_layout_entry(source: &Path, metadata: &fs::Metadata, destination: &str, 
             mode_or(mode, filemeta::permissions(metadata)),
         )
     } else if file_type.is_symlink() {
-        let target = filemeta::read_link_target(source).at(source)?;
+        let target = filemeta::read_link_target(source).with_context(|| source.display().to_string())?;
         writer.symlink(destination, &target)
     } else if file_type.is_dir() {
         writer.directory(destination, mode_or(mode, filemeta::permissions(metadata)))
     } else {
-        fail!("unsupported layout source: {}", source.display())
+        bail!("unsupported layout source: {}", source.display())
     }
 }
 
@@ -221,10 +200,7 @@ impl Resolver<'_> {
         Ok(writer
             .into_entries()
             .into_iter()
-            .map(|(name, file)| jarpack::Source {
-                manifest: Some(jarpack::ManifestMode::Keep),
-                ..jarpack::Source::file(name, file)
-            })
+            .map(|(name, file)| jarpack::Source::file(name, file).with_manifest(jarpack::ManifestMode::Keep))
             .collect())
     }
 
@@ -238,11 +214,9 @@ impl Resolver<'_> {
                 None => Self::copy_asset(&inputs[0], asset, writer),
                 Some(transform) => match transform.kind {
                     LayoutTransformKind::ArchiveTree => self.extract_archive(&inputs[0], asset, transform, writer),
-                    LayoutTransformKind::GzipXmlArchive => self.gzip_xml_archives(&inputs, asset, writer),
-                    LayoutTransformKind::TreeMap => Self::map_trees(&inputs, asset, transform, writer),
                 },
             };
-            result.map_err(|error| error.context(format_args!("layout asset {:?}", asset.destination)))?;
+            result.with_context(|| format!("layout asset {:?}", asset.destination))?;
         }
         Ok(())
     }
@@ -251,8 +225,8 @@ impl Resolver<'_> {
     /// relative link when a raw directory member is one.
     fn layout_input(&mut self, reference: &Reference) -> Result<LayoutInput> {
         let artifact = &self.execution.artifacts[&reference.artifact];
-        if artifact.kind == "directory" {
-            let root = layout_directory(&artifact.root).map_err(|error| error.context(format_args!("input {}", artifact.id)))?;
+        if artifact.kind == ArtifactKind::Directory {
+            let root = layout_directory(&artifact.root).with_context(|| format!("input {}", artifact.id))?;
             if reference.path.is_empty() {
                 return Ok(LayoutInput::Directory(root));
             }
@@ -261,7 +235,7 @@ impl Resolver<'_> {
             }
         }
         let path = self.resolve(reference)?;
-        let metadata = fs::metadata(&path).at(&path)?;
+        let metadata = fs::metadata(&path).with_context(|| path.display().to_string())?;
         Ok(LayoutInput::File { path, metadata })
     }
 
@@ -275,13 +249,13 @@ impl Resolver<'_> {
         if !metadata.file_type().is_symlink() {
             return Ok(None);
         }
-        let target = filemeta::read_link_target(&member).at(&member)?;
+        let target = filemeta::read_link_target(&member).with_context(|| member.display().to_string())?;
         if !paths::is_absolute_target(&target) {
             return Ok(Some(LayoutInput::Symlink { path: member, target }));
         }
         let (source, source_metadata, transport_root) =
             resolve_transport_file(&target, path, self.transport_roots.get(id).map(PathBuf::as_path))
-                .map_err(|error| error.context(format_args!("input {id}/{path}")))?;
+                .with_context(|| format!("input {id}/{path}"))?;
         self.transport_roots.insert(id.to_owned(), transport_root);
         Ok(Some(LayoutInput::File {
             path: source,
@@ -297,21 +271,17 @@ impl Resolver<'_> {
             LayoutInput::File { path, metadata } => return copy_layout_entry(path, metadata, &asset.destination, asset.mode, writer),
             LayoutInput::Directory(root) => root,
         };
-        let metadata = fs::symlink_metadata(root).at(root)?;
+        let metadata = fs::symlink_metadata(root).with_context(|| root.display().to_string())?;
         writer.directory(
             &asset.destination,
             mode_or(copy_directory_mode(asset.mode), filemeta::permissions(&metadata)),
         )?;
-        let mut entries = Vec::new();
-        walk_layout_tree(root, |entry| {
-            entries.push(entry);
-            Ok(Walk::Continue)
-        })?;
+        let mut entries = walk_layout_tree(root)?;
         entries.sort_by(|first, second| first.relative.cmp(&second.relative));
         let mut transport_root = None;
         for entry in &entries {
             let (source, metadata) = transport_entry(entry, &mut transport_root)?;
-            let destination = join_layout_path(&asset.destination, &entry.relative);
+            let destination = distpath::join(&asset.destination, &entry.relative);
             let mode = if metadata.is_dir() {
                 copy_directory_mode(asset.mode)
             } else {
@@ -322,48 +292,10 @@ impl Resolver<'_> {
         Ok(())
     }
 
-    /// Copies the entries of every source directory that a mapping selects. The first mapping per entry wins.
-    fn map_trees(inputs: &[LayoutInput], asset: &LayoutAsset, transform: &LayoutTransform, writer: &mut dyn LayoutWriter) -> Result<()> {
-        let excludes = compile_globs(&transform.excludes, "invalid exclude")?;
-        let directory_excludes = compile_globs(&transform.directory_excludes, "invalid exclude")?;
-        let matchers = transform
-            .mappings
-            .iter()
-            .map(|mapping| JavaGlob::compile(mapping_pattern(mapping)).map_err(|error| Error::new(error.to_string())))
-            .collect::<Result<Vec<_>>>()?;
-        let matches = |globs: &[JavaGlob], name: &str| globs.iter().any(|glob| glob.matches(name));
-        for input in inputs {
-            let LayoutInput::Directory(root) = input else {
-                fail!("a tree-map source must be a directory: {}", input.path().display());
-            };
-            let mut transport_root = None;
-            walk_layout_tree(root, |entry| {
-                if entry.metadata.is_dir() {
-                    if matches(&directory_excludes, &entry.relative) {
-                        return Ok(Walk::SkipDirectory);
-                    }
-                } else if matches(&excludes, &entry.relative) {
-                    return Ok(Walk::Continue);
-                }
-                let Some(index) = matchers.iter().position(|matcher| matcher.matches(&entry.relative)) else {
-                    return Ok(Walk::Continue);
-                };
-                let mapping = &transform.mappings[index];
-                let Some(remainder) = strip_layout_path(&entry.relative, mapping.strip_components) else {
-                    return Ok(Walk::Continue);
-                };
-                let target = join_layout_path(&asset.destination, &join_layout_path(&mapping.destination, &remainder));
-                let (source, metadata) = transport_entry(&entry, &mut transport_root)?;
-                copy_layout_entry(&source, &metadata, &target, asset.mode, writer)?;
-                Ok(Walk::Continue)
-            })?;
-        }
-        Ok(())
-    }
-
     /// Writes the entries of one archive. One mapping serves the whole archive: the first mapping in declaration order
     /// that matches any stripped entry name. With mappings, an entry that no mapping matches is dropped. The include
-    /// rules drop an entry before the mapping is selected, so a dropped entry selects no mapping.
+    /// rules drop an entry before the mapping is selected, so a dropped entry selects no mapping. Only the selection
+    /// needs a first visit of the archive, so a transform without mappings visits the archive once.
     fn extract_archive(
         &mut self,
         input: &LayoutInput,
@@ -372,27 +304,29 @@ impl Resolver<'_> {
         writer: &mut dyn LayoutWriter,
     ) -> Result<()> {
         let LayoutInput::File { path: file, .. } = input else {
-            fail!("archive-tree requires an archive file: {}", input.path().display());
+            bail!("archive-tree requires an archive file: {}", input.path().display());
         };
         let includes = compile_includes(&transform.includes)?;
         let executables = compile_globs(&transform.executables, "invalid executable pattern")?;
         let mut archive = LayoutArchive::open(file, self.scratch)?;
         let strip = transform.strip_components;
-        let mut names = Vec::new();
-        archive.visit(&mut |entry| {
-            if let Some(stripped) = strip_layout_path(&entry.name, strip)
-                && includes_entry(&includes, &stripped)
-            {
-                names.push(stripped);
-            }
-            Ok(())
-        })?;
         let mut selected = None;
-        for (index, mapping) in transform.mappings.iter().enumerate() {
-            let candidate = JavaGlob::compile(mapping_pattern(mapping)).map_err(|error| Error::new(error.to_string()))?;
-            if names.iter().any(|name| candidate.matches(name)) {
-                selected = Some((index, candidate));
-                break;
+        if !transform.mappings.is_empty() {
+            let mut names = Vec::new();
+            archive.visit(&mut |entry| {
+                if let Some(stripped) = strip_layout_path(&entry.name, strip)
+                    && includes_entry(&includes, &stripped)
+                {
+                    names.push(stripped);
+                }
+                Ok(())
+            })?;
+            for (index, mapping) in transform.mappings.iter().enumerate() {
+                let candidate = JavaGlob::compile(mapping_pattern(mapping))?;
+                if names.iter().any(|name| candidate.matches(name)) {
+                    selected = Some((index, candidate));
+                    break;
+                }
             }
         }
         let rejects_duplicates = archive.rejects_duplicates();
@@ -417,19 +351,17 @@ impl Resolver<'_> {
                 let Some(remainder) = strip_layout_path(&stripped, mapping.strip_components) else {
                     return Ok(());
                 };
-                join_layout_path(&mapping.destination, &remainder)
+                distpath::join(&mapping.destination, &remainder)
             };
-            let target = join_layout_path(&asset.destination, &mapped);
+            let target = distpath::join(&asset.destination, &mapped);
             if rejects_duplicates && !written.insert(target.clone()) {
-                fail!("duplicate archive destination {target:?} in {}", file.display());
+                bail!("duplicate archive destination {target:?} in {}", file.display());
             }
             let mode = mode_or(asset.mode, entry.mode & 0o755);
             match entry.kind {
                 EntryKind::Directory => writer.directory(&target, mode_or(mode, 0o755)),
                 EntryKind::File => {
-                    let content = entry
-                        .content()
-                        .map_err(|error| error.context(format_args!("{}: {}", file.display(), entry.name)))?;
+                    let content = entry.content().with_context(|| format!("{}: {}", file.display(), entry.name))?;
                     let mode = mode_or(mode, 0o644);
                     let mode = if executables.iter().any(|matcher| matcher.matches(&stripped)) {
                         mode | 0o111
@@ -442,44 +374,6 @@ impl Resolver<'_> {
             }
         })
     }
-
-    /// Reads the `.xml` entries of every source archive in central-directory order and writes each one as
-    /// `<destination>/<name>.gzip`. A source is a `.zip` or a `.jar`. A file that is not XML, and a link, fail with the
-    /// archive name. The entry keeps the deflate stream of the archive, so the Kotlin build and this packer write the
-    /// same bytes.
-    fn gzip_xml_archives(&mut self, inputs: &[LayoutInput], asset: &LayoutAsset, writer: &mut dyn LayoutWriter) -> Result<()> {
-        let is_archive = |path: &Path| {
-            let name = path
-                .file_name()
-                .map(|name| name.to_string_lossy().to_lowercase())
-                .unwrap_or_default();
-            name.ends_with(".zip") || name.ends_with(".jar")
-        };
-        for input in inputs {
-            let file = match input {
-                LayoutInput::File { path, .. } if is_archive(path) => path,
-                _ => fail!(
-                    "a gzip-xml-archive transform reads a zip or jar archive: {}",
-                    input.path().display()
-                ),
-            };
-            let mut archive = LayoutArchive::open(file, self.scratch)?;
-            archive.visit(&mut |entry| {
-                if entry.kind == EntryKind::Directory {
-                    return Ok(());
-                }
-                if entry.kind != EntryKind::File || !entry.name.ends_with(".xml") {
-                    fail!("unexpected file {:?} in {}", entry.name, file.display());
-                }
-                let stream = entry
-                    .deflate()
-                    .map_err(|error| error.context(format_args!("{}: {}", file.display(), entry.name)))?;
-                let destination = join_layout_path(&asset.destination, &format!("{}.gzip", entry.name));
-                writer.file(&destination, Content::Bytes(gzip_member(&stream)), 0o644)
-            })?;
-        }
-        Ok(())
-    }
 }
 
 /// Replaces an absolute link by the Bazel transport file it names. Every other entry is returned as it is.
@@ -487,7 +381,7 @@ fn transport_entry(entry: &TreeEntry, transport_root: &mut Option<PathBuf>) -> R
     if !entry.metadata.file_type().is_symlink() {
         return Ok((entry.full.clone(), entry.metadata.clone()));
     }
-    let target = filemeta::read_link_target(&entry.full).at(&entry.full)?;
+    let target = filemeta::read_link_target(&entry.full).with_context(|| entry.full.display().to_string())?;
     if !paths::is_absolute_target(&target) {
         return Ok((entry.full.clone(), entry.metadata.clone()));
     }
@@ -495,3 +389,6 @@ fn transport_entry(entry: &TreeEntry, transport_root: &mut Option<PathBuf>) -> R
     *transport_root = Some(root);
     Ok((source, metadata))
 }
+
+#[cfg(test)]
+mod tests;

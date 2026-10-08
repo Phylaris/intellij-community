@@ -10,6 +10,7 @@ import org.jetbrains.intellij.build.BuildLifetime
 import org.jetbrains.intellij.build.BuildTracer
 import org.jetbrains.intellij.build.ModuleOutputProvider
 import org.jetbrains.intellij.build.buildSpan
+import org.jetbrains.intellij.build.impl.BazelBuildInputs
 import org.jetbrains.intellij.build.impl.BazelModuleOutputProvider
 import org.jetbrains.intellij.build.impl.JpsModuleOutputProvider
 import org.jetbrains.intellij.build.impl.bazelOutputRoot
@@ -36,6 +37,7 @@ import org.jetbrains.intellij.build.telemetry.ConsoleSpanExporter
 import org.jetbrains.intellij.build.telemetry.TraceManager
 import org.jetbrains.intellij.build.telemetry.withTracer
 import org.jetbrains.intellij.build.telemetry.withoutTracer
+import org.jetbrains.jps.model.JpsProject
 import org.jetbrains.jps.model.serialization.JpsMavenSettings
 import org.jetbrains.jps.model.serialization.JpsSerializationManager
 import java.nio.file.Files
@@ -98,6 +100,8 @@ private fun determineProductCategory(contentSpec: ProductModulesContentSpec?): P
  * - `--validation=<ids>`: Run only specified validation rules (comma-separated).
  *   Use `--validation=none` to skip all validation. Generation generators always run.
  * - `--trace=<file>`: Write an OpenTelemetry trace of the run into the file, in the Jaeger JSON format.
+ * - `--unused-inputs=<file>`: Write the declared Bazel inputs that the run did not read into the file, in every mode.
+ *   Without an explicit input manifest, the file is empty.
  *
  * @param args Command line arguments
  * @param communityModuleSetSources Module sets from community sources grouped by discovery label
@@ -197,6 +201,8 @@ fun runModuleSetMain(
     println("Trace: $traceFile")
   }
 
+  options.unusedInputsFile?.let(BazelBuildInputs::writeUnusedInputs)
+
   // The exit must come after the trace file is closed, because a process exit skips the flush of the exporter.
   if (exitCode != 0) {
     exitProcess(exitCode)
@@ -265,7 +271,7 @@ private fun jsonResponse(
       name = name,
       className = "test-product",
       sourceFile = "test-product",
-      pluginXmlPath = "ultimate/platform-ultimate/testResources/META-INF/${name}Plugin.xml",
+      pluginXmlPath = "ultimate/platform-ultimate/testFramework/resources/META-INF/${name}Plugin.xml",
       contentSpec = spec,
       buildModules = emptyList()
     )
@@ -325,17 +331,29 @@ fun parseJsonArgument(
   }
 }
 
-private fun createModuleOutputProvider(projectRoot: Path, lifetime: BuildLifetime): ModuleOutputProvider {
-  val useTestCompilationOutput = true
-  val project = buildSpan("load project") { span ->
+/**
+ * Loads the JPS project under [projectRoot], with the local Maven repository as `MAVEN_REPOSITORY`.
+ *
+ * The generator reads the model of each repository half that it writes, so a caller can load the community project
+ * beside the ultimate one.
+ */
+@ApiStatus.Internal
+fun loadGeneratorJpsProject(projectRoot: Path): JpsProject {
+  return buildSpan("load project") { span ->
     val project = JpsSerializationManager.getInstance().loadProject(
       projectRoot.toString(),
       mapOf("MAVEN_REPOSITORY" to JpsMavenSettings.getMavenRepositoryPath()),
       false
     )
+    span.setAttribute("projectRoot", projectRoot.toString())
     span.setAttribute("moduleCount", project.modules.size.toLong())
     project
   }
+}
+
+private fun createModuleOutputProvider(projectRoot: Path, lifetime: BuildLifetime): ModuleOutputProvider {
+  val useTestCompilationOutput = true
+  val project = loadGeneratorJpsProject(projectRoot)
   val bazelOutputRoot = bazelOutputRoot ?: return JpsModuleOutputProvider(project, useTestCompilationOutput = useTestCompilationOutput)
   return BazelModuleOutputProvider(
     modules = project.modules,

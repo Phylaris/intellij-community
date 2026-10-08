@@ -99,7 +99,6 @@ import com.intellij.openapi.vfs.impl.ZipHandler
 import com.intellij.openapi.vfs.impl.jar.TimedZipHandler
 import com.intellij.openapi.wm.IdeFocusManager
 import com.intellij.openapi.wm.WindowManager
-import com.intellij.openapi.wm.ex.WelcomeScreenProjectProvider
 import com.intellij.openapi.wm.ex.WindowManagerEx
 import com.intellij.openapi.wm.ex.isBackgroundActivitiesSuppressed
 import com.intellij.openapi.wm.impl.welcomeScreen.WelcomeFrame
@@ -120,6 +119,7 @@ import com.intellij.platform.eel.provider.EelInitialization
 import com.intellij.platform.eel.provider.getEelDescriptor
 import com.intellij.platform.ide.diagnostic.startUpPerformanceReporter.FUSProjectHotStartUpMeasurer
 import com.intellij.platform.isLoadedFromCacheButHasNoModules
+import com.intellij.platform.isProjectOpenWithoutModule
 import com.intellij.platform.project.ProjectEntitiesStorage
 import com.intellij.platform.workspace.jps.JpsMetrics
 import com.intellij.platform.workspace.storage.impl.url.toVirtualFileUrl
@@ -740,7 +740,18 @@ open class ProjectManagerImpl : ProjectManagerEx(), Disposable {
         return null
       }
     }
+    else {
+      confirmTrustedStateOrCancel(projectIdentityFile, options)
+    }
 
+    return span("ProjectManager.openAsync") {
+      FUSProjectHotStartUpMeasurer.withProjectContextElement(projectIdentityFile) {
+        doOpenAsync(options, projectIdentityFile)
+      }
+    }
+  }
+
+  private suspend fun confirmTrustedStateOrCancel(projectIdentityFile: Path, options: OpenProjectTask) {
     span("checkTrustedState") {
       if (!checkTrustedState(projectIdentityFile, options.projectName)) {
         LOG.info("Project is not trusted, aborting")
@@ -757,12 +768,6 @@ open class ProjectManagerImpl : ProjectManagerEx(), Disposable {
         cancelProjectOpening(options.project, it)
       }
       throw it
-    }
-
-    return span("ProjectManager.openAsync") {
-      FUSProjectHotStartUpMeasurer.withProjectContextElement(projectIdentityFile) {
-        doOpenAsync(options, projectIdentityFile)
-      }
     }
   }
 
@@ -1182,6 +1187,10 @@ open class ProjectManagerImpl : ProjectManagerEx(), Disposable {
       return null
     }
 
+    if (isProjectOpenWithoutModule()) {
+      return null
+    }
+
     if (options.runConfigurators == true && (options.isNewProject || project.serviceAsync<ModuleManager>().modules.isEmpty())
         || isLoadedFromCacheButHasNoModules(project)
     ) {
@@ -1212,9 +1221,12 @@ open class ProjectManagerImpl : ProjectManagerEx(), Disposable {
    *
    * `false` if [projectToClose]'s frame was successfully freed up for reuse, or the user chose "New Window" and
    * it can be opened in this same process — either way, the caller should proceed to open [projectDir] here.
+   *
+   * The function confirms the trusted state of [projectDir] when [projectDir] opens in this process.
    */
   private suspend fun attachToExistingOrOpenInTheSameFrame(projectToClose: Project, options: OpenProjectTask, projectDir: Path): Boolean {
     if (options.forceReuseFrame || WelcomeUtils.noCheckOpenConfirmation(projectToClose)) {
+      confirmTrustedStateOrCancel(projectDir, options)
       return !closeAndDisposeKeepingFrame(projectToClose, options.forceReuseFrame)
     }
 
@@ -1228,12 +1240,16 @@ open class ProjectManagerImpl : ProjectManagerEx(), Disposable {
         return true
       }
       GeneralSettings.OPEN_PROJECT_SAME_WINDOW -> {
+        val perProcessSupport = processPerProjectSupport()
+        val canBeOpenedInThisProcess = perProcessSupport.canBeOpenedInThisProcess(projectDir)
+        if (canBeOpenedInThisProcess) {
+          confirmTrustedStateOrCancel(projectDir, options)
+        }
         if (!closeAndDisposeKeepingFrame(projectToClose)) {
           return true
         }
 
-        val perProcessSupport = processPerProjectSupport()
-        if (!perProcessSupport.canBeOpenedInThisProcess(projectDir)) {
+        if (!canBeOpenedInThisProcess) {
           perProcessSupport.openInChildProcess(projectDir)
 
           val app = ApplicationManagerEx.getApplicationEx()
@@ -1254,6 +1270,7 @@ open class ProjectManagerImpl : ProjectManagerEx(), Disposable {
           return true
         }
 
+        confirmTrustedStateOrCancel(projectDir, options)
         return false
       }
       else -> {
@@ -1546,7 +1563,7 @@ private suspend fun runApprovedExtensions(project: Project, epName: String, esse
     if (!isCorePlugin(pluginDescriptor)
         // todo develar
         && !(pluginDescriptor.pluginId.idString == "org.jetbrains.bazel" && assignableToClassName == "org.jetbrains.bazel.flow.open.OpenBazelProjectAndSyncStartupActivity")
-        && !(pluginDescriptor.pluginId.idString == "com.jetbrains.remoteDevelopment" && assignableToClassName == "com.intellij.platform.frontend.split.base.core.ThinClientProjectExtensionsConfigurator")) {
+        && !(pluginDescriptor.pluginId.idString == "com.jetbrains.remoteDevelopment" && assignableToClassName == "com.intellij.platform.frontend.split.baseline.core.ThinClientProjectExtensionsConfigurator")) {
       LOG.error(PluginException("Plugin $pluginDescriptor is not approved to add ${ep.name}", pluginDescriptor.pluginId))
       continue
     }

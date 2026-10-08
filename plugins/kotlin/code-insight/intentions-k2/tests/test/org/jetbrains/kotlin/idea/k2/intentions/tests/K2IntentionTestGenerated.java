@@ -13882,6 +13882,11 @@ public abstract class K2IntentionTestGenerated extends AbstractK2IntentionTest {
             KotlinTestUtils.runTest(this::doTest, this, testDataFilePath);
         }
 
+        @TestMetadata("actualFun.kt")
+        public void testActualFun() throws Exception {
+            runTest("../../../idea/tests/testData/intentions/moveToCompanionBlock/actualFun.kt");
+        }
+
         @TestMetadata("comments.kt")
         public void testComments() throws Exception {
             runTest("../../../idea/tests/testData/intentions/moveToCompanionBlock/comments.kt");
@@ -13902,9 +13907,19 @@ public abstract class K2IntentionTestGenerated extends AbstractK2IntentionTest {
             runTest("../../../idea/tests/testData/intentions/moveToCompanionBlock/existingMultipleCompanionBlocks.kt");
         }
 
+        @TestMetadata("expectFun.kt")
+        public void testExpectFun() throws Exception {
+            runTest("../../../idea/tests/testData/intentions/moveToCompanionBlock/expectFun.kt");
+        }
+
         @TestMetadata("funFromCompanionObject.kt")
         public void testFunFromCompanionObject() throws Exception {
             runTest("../../../idea/tests/testData/intentions/moveToCompanionBlock/funFromCompanionObject.kt");
+        }
+
+        @TestMetadata("inCompanionBlock.kt")
+        public void testInCompanionBlock() throws Exception {
+            runTest("../../../idea/tests/testData/intentions/moveToCompanionBlock/inCompanionBlock.kt");
         }
 
         @TestMetadata("inObject.kt")
@@ -13922,9 +13937,29 @@ public abstract class K2IntentionTestGenerated extends AbstractK2IntentionTest {
             runTest("../../../idea/tests/testData/intentions/moveToCompanionBlock/incompleteProperty.kt");
         }
 
+        @TestMetadata("infixFun.kt")
+        public void testInfixFun() throws Exception {
+            runTest("../../../idea/tests/testData/intentions/moveToCompanionBlock/infixFun.kt");
+        }
+
+        @TestMetadata("invokeOperator.kt")
+        public void testInvokeOperator() throws Exception {
+            runTest("../../../idea/tests/testData/intentions/moveToCompanionBlock/invokeOperator.kt");
+        }
+
         @TestMetadata("lastFunFromCompanionObject.kt")
         public void testLastFunFromCompanionObject() throws Exception {
             runTest("../../../idea/tests/testData/intentions/moveToCompanionBlock/lastFunFromCompanionObject.kt");
+        }
+
+        @TestMetadata("memberExtensionFun.kt")
+        public void testMemberExtensionFun() throws Exception {
+            runTest("../../../idea/tests/testData/intentions/moveToCompanionBlock/memberExtensionFun.kt");
+        }
+
+        @TestMetadata("memberExtensionProp.kt")
+        public void testMemberExtensionProp() throws Exception {
+            runTest("../../../idea/tests/testData/intentions/moveToCompanionBlock/memberExtensionProp.kt");
         }
 
         @TestMetadata("memberFunctionWithNoParams.kt")
@@ -13945,6 +13980,16 @@ public abstract class K2IntentionTestGenerated extends AbstractK2IntentionTest {
         @TestMetadata("nonConflictingOverload.kt")
         public void testNonConflictingOverload() throws Exception {
             runTest("../../../idea/tests/testData/intentions/moveToCompanionBlock/nonConflictingOverload.kt");
+        }
+
+        @TestMetadata("ofOperator.kt")
+        public void testOfOperator() throws Exception {
+            runTest("../../../idea/tests/testData/intentions/moveToCompanionBlock/ofOperator.kt");
+        }
+
+        @TestMetadata("plusOperator.kt")
+        public void testPlusOperator() throws Exception {
+            runTest("../../../idea/tests/testData/intentions/moveToCompanionBlock/plusOperator.kt");
         }
 
         @TestMetadata("privateMemberVisibility.kt")
@@ -13974,6 +14019,114 @@ public abstract class K2IntentionTestGenerated extends AbstractK2IntentionTest {
     }
 
     @RunWith(JUnit3RunnerWithInners.class)
+    @TestMetadata("../../../idea/tests/testData/intentions/moveToCompanionExtension")
+    public static class MoveToCompanionExtension extends AbstractK2IntentionTest {
+        private void runTest(String testDataFilePath) throws Exception {
+            KotlinTestUtils.runTest(this::doTest, this, testDataFilePath);
+        }
+
+        @TestMetadata("actualFun.kt")
+        public void testActualFun() throws Exception {
+            runTest("../../../idea/tests/testData/intentions/moveToCompanionExtension/actualFun.kt");
+        }
+
+        @TestMetadata("disabledCompanionExtensions.kt")
+        public void testDisabledCompanionExtensions() throws Exception {
+            runTest("../../../idea/tests/testData/intentions/moveToCompanionExtension/disabledCompanionExtensions.kt");
+        }
+
+        @TestMetadata("disabledFeatureFlag.kt")
+        public void testDisabledFeatureFlag() throws Exception {
+            runTest("../../../idea/tests/testData/intentions/moveToCompanionExtension/disabledFeatureFlag.kt");
+        }
+
+        @TestMetadata("existingCompanionBlock.kt")
+        public void testExistingCompanionBlock() throws Exception {
+            runTest("../../../idea/tests/testData/intentions/moveToCompanionExtension/existingCompanionBlock.kt");
+        }
+
+        @TestMetadata("expectFun.kt")
+        public void testExpectFun() throws Exception {
+            runTest("../../../idea/tests/testData/intentions/moveToCompanionExtension/expectFun.kt");
+        }
+
+        @TestMetadata("fromCompanionBlock.kt")
+        public void testFromCompanionBlock() throws Exception {
+            runTest("../../../idea/tests/testData/intentions/moveToCompanionExtension/fromCompanionBlock.kt");
+        }
+
+        @TestMetadata("inObject.kt")
+        public void testInObject() throws Exception {
+            runTest("../../../idea/tests/testData/intentions/moveToCompanionExtension/inObject.kt");
+        }
+
+        @TestMetadata("infixFun.kt")
+        public void testInfixFun() throws Exception {
+            runTest("../../../idea/tests/testData/intentions/moveToCompanionExtension/infixFun.kt");
+        }
+
+        @TestMetadata("invokeOperator.kt")
+        public void testInvokeOperator() throws Exception {
+            runTest("../../../idea/tests/testData/intentions/moveToCompanionExtension/invokeOperator.kt");
+        }
+
+        @TestMetadata("memberExtensionFun.kt")
+        public void testMemberExtensionFun() throws Exception {
+            runTest("../../../idea/tests/testData/intentions/moveToCompanionExtension/memberExtensionFun.kt");
+        }
+
+        @TestMetadata("memberFunction.kt")
+        public void testMemberFunction() throws Exception {
+            runTest("../../../idea/tests/testData/intentions/moveToCompanionExtension/memberFunction.kt");
+        }
+
+        @TestMetadata("memberFunctionNested.kt")
+        public void testMemberFunctionNested() throws Exception {
+            runTest("../../../idea/tests/testData/intentions/moveToCompanionExtension/memberFunctionNested.kt");
+        }
+
+        @TestMetadata("memberFunctionShortening.kt")
+        public void testMemberFunctionShortening() throws Exception {
+            runTest("../../../idea/tests/testData/intentions/moveToCompanionExtension/memberFunctionShortening.kt");
+        }
+
+        @TestMetadata("memberFunctionWithInstanceAccess.kt")
+        public void testMemberFunctionWithInstanceAccess() throws Exception {
+            runTest("../../../idea/tests/testData/intentions/moveToCompanionExtension/memberFunctionWithInstanceAccess.kt");
+        }
+
+        @TestMetadata("memberFunctionWithLocalFunction.kt")
+        public void testMemberFunctionWithLocalFunction() throws Exception {
+            runTest("../../../idea/tests/testData/intentions/moveToCompanionExtension/memberFunctionWithLocalFunction.kt");
+        }
+
+        @TestMetadata("memberFunctionWithLocalProperty.kt")
+        public void testMemberFunctionWithLocalProperty() throws Exception {
+            runTest("../../../idea/tests/testData/intentions/moveToCompanionExtension/memberFunctionWithLocalProperty.kt");
+        }
+
+        @TestMetadata("memberFunctionWithParameter.kt")
+        public void testMemberFunctionWithParameter() throws Exception {
+            runTest("../../../idea/tests/testData/intentions/moveToCompanionExtension/memberFunctionWithParameter.kt");
+        }
+
+        @TestMetadata("memberProperty.kt")
+        public void testMemberProperty() throws Exception {
+            runTest("../../../idea/tests/testData/intentions/moveToCompanionExtension/memberProperty.kt");
+        }
+
+        @TestMetadata("ofOperator.kt")
+        public void testOfOperator() throws Exception {
+            runTest("../../../idea/tests/testData/intentions/moveToCompanionExtension/ofOperator.kt");
+        }
+
+        @TestMetadata("plusOperator.kt")
+        public void testPlusOperator() throws Exception {
+            runTest("../../../idea/tests/testData/intentions/moveToCompanionExtension/plusOperator.kt");
+        }
+    }
+
+    @RunWith(JUnit3RunnerWithInners.class)
     @TestMetadata("../../../idea/tests/testData/intentions/moveToCompanionObject")
     public static class MoveToCompanionObject extends AbstractK2IntentionTest {
         private void runTest(String testDataFilePath) throws Exception {
@@ -13988,6 +14141,11 @@ public abstract class K2IntentionTestGenerated extends AbstractK2IntentionTest {
         @TestMetadata("abstractProperty.kt")
         public void testAbstractProperty() throws Exception {
             runTest("../../../idea/tests/testData/intentions/moveToCompanionObject/abstractProperty.kt");
+        }
+
+        @TestMetadata("actualFun.kt")
+        public void testActualFun() throws Exception {
+            runTest("../../../idea/tests/testData/intentions/moveToCompanionObject/actualFun.kt");
         }
 
         @TestMetadata("avoidNameCapture.kt")
@@ -14018,6 +14176,11 @@ public abstract class K2IntentionTestGenerated extends AbstractK2IntentionTest {
         @TestMetadata("expectClass.kt")
         public void testExpectClass() throws Exception {
             runTest("../../../idea/tests/testData/intentions/moveToCompanionObject/expectClass.kt");
+        }
+
+        @TestMetadata("expectFun.kt")
+        public void testExpectFun() throws Exception {
+            runTest("../../../idea/tests/testData/intentions/moveToCompanionObject/expectFun.kt");
         }
 
         @TestMetadata("functionWithOverride.kt")
@@ -14070,9 +14233,29 @@ public abstract class K2IntentionTestGenerated extends AbstractK2IntentionTest {
             runTest("../../../idea/tests/testData/intentions/moveToCompanionObject/inObject.kt");
         }
 
+        @TestMetadata("infixFun.kt")
+        public void testInfixFun() throws Exception {
+            runTest("../../../idea/tests/testData/intentions/moveToCompanionObject/infixFun.kt");
+        }
+
+        @TestMetadata("invokeOperator.kt")
+        public void testInvokeOperator() throws Exception {
+            runTest("../../../idea/tests/testData/intentions/moveToCompanionObject/invokeOperator.kt");
+        }
+
         @TestMetadata("localFunction.kt")
         public void testLocalFunction() throws Exception {
             runTest("../../../idea/tests/testData/intentions/moveToCompanionObject/localFunction.kt");
+        }
+
+        @TestMetadata("memberExtensionFun.kt")
+        public void testMemberExtensionFun() throws Exception {
+            runTest("../../../idea/tests/testData/intentions/moveToCompanionObject/memberExtensionFun.kt");
+        }
+
+        @TestMetadata("ofOperator.kt")
+        public void testOfOperator() throws Exception {
+            runTest("../../../idea/tests/testData/intentions/moveToCompanionObject/ofOperator.kt");
         }
 
         @TestMetadata("overriddenFunction.kt")
@@ -14093,6 +14276,11 @@ public abstract class K2IntentionTestGenerated extends AbstractK2IntentionTest {
         @TestMetadata("overriddenPropertyK2.kt")
         public void testOverriddenPropertyK2() throws Exception {
             runTest("../../../idea/tests/testData/intentions/moveToCompanionObject/overriddenPropertyK2.kt");
+        }
+
+        @TestMetadata("plusOperator.kt")
+        public void testPlusOperator() throws Exception {
+            runTest("../../../idea/tests/testData/intentions/moveToCompanionObject/plusOperator.kt");
         }
 
         @TestMetadata("propertyUsingClassInstance.kt")

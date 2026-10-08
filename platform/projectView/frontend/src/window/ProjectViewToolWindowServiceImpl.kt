@@ -5,6 +5,7 @@ package com.intellij.platform.projectView.frontend.window
 import com.intellij.configurationStore.SettingsSavingComponent
 import com.intellij.diagnostic.rethrowControlFlowException
 import com.intellij.ide.projectView.impl.ProjectViewPane
+import com.intellij.openapi.actionSystem.ActionGroup
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.application.ModalityState
@@ -30,6 +31,7 @@ import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.openapi.wm.impl.content.ToolWindowContentUi
 import com.intellij.platform.projectView.actions.ProjectViewActionSupport
 import com.intellij.platform.projectView.frontend.actions.ProjectViewActionSupportImpl
+import com.intellij.platform.projectView.frontend.actions.ProjectViewToolbarActionGroup
 import com.intellij.platform.projectView.frontend.actions.SplitProjectViewAutoscrollFromSource
 import com.intellij.platform.projectView.frontend.impl.FrontendProjectViewUpdateRequestsService
 import com.intellij.platform.projectView.frontend.impl.TreeBasedFrontendProjectViewPane
@@ -40,7 +42,9 @@ import com.intellij.platform.projectView.pane.ProjectViewClearStateEvent
 import com.intellij.platform.projectView.pane.ProjectViewNodePath
 import com.intellij.platform.projectView.pane.ProjectViewPaneDescriptorImpl
 import com.intellij.platform.projectView.pane.ProjectViewPaneId
+import com.intellij.platform.projectView.pane.ProjectViewPaneKind
 import com.intellij.platform.projectView.pane.projectViewPaneId
+import com.intellij.platform.projectView.runSafelyCancellable
 import com.intellij.platform.projectView.window.ProjectViewToolWindowService
 import com.intellij.ui.content.Content
 import com.intellij.ui.content.ContentFactory
@@ -64,6 +68,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
@@ -125,8 +130,8 @@ internal class ProjectViewToolWindowServiceImpl(
   @RequiresEdt(generateAssertion = false /* IJPL-115548 */)
   override fun setupToolWindow(toolWindow: ToolWindow) {
     toolWindow.setDefaultContentUiType(ToolWindowContentUiType.COMBO)
-    val action = ActionManager.getInstance().getAction("ProjectViewToolbar")
-    if (action != null) toolWindow.setTitleActions(listOf(action))
+    val action = ActionManager.getInstance().getAction("ProjectViewToolbar") as? ActionGroup?
+    if (action != null) toolWindow.setTitleActions(listOf(ProjectViewToolbarActionGroup(action)))
     toolWindow.setAdditionalGearActions(menuActionGroup)
     toolWindow.component.putClientProperty(ToolWindowContentUi.HIDE_ID_LABEL, "true")
   }
@@ -252,11 +257,12 @@ internal class ProjectViewToolWindowServiceImpl(
     if (newPane != null) {
       persistentState.putSelectedPaneState(newPane.id)
     }
-    updateMenuActions()
+    updateMenuActions(newPane)
   }
 
-  private fun updateMenuActions() {
+  private fun updateMenuActions(newPane: FrontendProjectViewPane?) {
     menuActionGroup.removeAll()
+    if ((newPane?.descriptor as ProjectViewPaneDescriptorImpl?)?.kind == ProjectViewPaneKind.UI_ONLY) return
     val group = ActionManager.getInstance().getAction("ProjectView.ToolWindow.SecondaryActions") as DefaultActionGroup
     for (action in group.getChildActionsOrStubs()) {
       menuActionGroup.addAction(action).setAsSecondary(true)
@@ -292,20 +298,7 @@ internal class ProjectViewToolWindowServiceImpl(
     else {
       LOG.debug { "To select $nodePath, need to change the pane from ${currentPane?.id} to ${nodePath.paneId}" }
       withContext(Dispatchers.UI) {
-        val toolWindow = ToolWindowManager.getInstance(project).getToolWindow(ToolWindowId.PROJECT_VIEW)
-        if (toolWindow == null) {
-          LOG.error("The Project View tool window is not found")
-          return@withContext null
-        }
-        val contentManager = toolWindow.contentManager
-        val content = contentManager.contents.firstOrNull { content ->
-          content.getUserData(PANE_KEY)?.id == nodePath.paneId
-        }
-        if (content == null) {
-          return@withContext null
-        }
-        contentManager.setSelectedContent(content)
-        content.getUserData(PANE_KEY)
+        selectPane(nodePath.paneId)
       }
     }
     if (pane == null) {
@@ -318,6 +311,29 @@ internal class ProjectViewToolWindowServiceImpl(
     }
     LOG.debug { "Selecting $nodePath" }
     pane.selectNode(nodePath)
+  }
+
+  @RequiresEdt
+  fun selectDefaultPane() {
+    selectPane(defaultSelection)
+  }
+
+  @RequiresEdt
+  private fun selectPane(paneId: ProjectViewPaneId): FrontendProjectViewPane? {
+    val toolWindow = ToolWindowManager.getInstance(project).getToolWindow(ToolWindowId.PROJECT_VIEW)
+    if (toolWindow == null) {
+      LOG.error("The Project View tool window is not found")
+      return null
+    }
+    val contentManager = toolWindow.contentManager
+    val content = contentManager.contents.firstOrNull { content ->
+      content.getUserData(PANE_KEY)?.id == paneId
+    }
+    if (content == null) {
+      return null
+    }
+    contentManager.setSelectedContent(content)
+    return content.getUserData(PANE_KEY)
   }
 
   override suspend fun save() {
@@ -444,7 +460,7 @@ internal class ProjectViewToolWindowServiceImpl(
                   }
                   else {
                     paneStateFlow.collect { event ->
-                      try {
+                      runSafelyCancellable(LOG, taskDescription = { "updating the pane ${pane.id} state, event $event" }) {
                         LOG.trace { "Update pane state for ${pane.id}: $event" }
                         if (event is ProjectViewClearStateEvent) {
                           withContext(Dispatchers.UI) {
@@ -456,14 +472,6 @@ internal class ProjectViewToolWindowServiceImpl(
                           activePanes += pane.id
                         }
                         pane.applyStateChange(event)
-                      }
-                      catch (e: Exception) {
-                        rethrowControlFlowException(e)
-                        LOG.error(
-                          "An error has occurred when updating the pane ${pane.id} state, the state might be inconsistent. " +
-                          "The problematic event was $event",
-                          e
-                        )
                       }
                     }
                   }
@@ -497,17 +505,9 @@ internal class ProjectViewToolWindowServiceImpl(
             LOG.debug { "Sending pane requests for ${pane.id}" }
             try {
               for (request in inChannel) {
-                try {
+                runSafelyCancellable(LOG, taskDescription = { "sending a request to the backend: $request" }) {
                   LOG.trace { "Sent request for pane ${pane.id}: $request" }
                   outChannel.send(request)
-                }
-                catch (e: Exception) {
-                  rethrowControlFlowException(e)
-                  LOG.error(
-                    "An error has occurred when trying to send a request to the backend. " +
-                    "The problematic request was $request",
-                    e
-                  )
                 }
               }
             }
@@ -684,6 +684,10 @@ internal class ProjectViewToolWindowServiceImpl(
         contentManager.addContent(content, contentManager.contentCount)
       }
     }
+  }
+
+  override suspend fun awaitInitialization() {
+    currentPaneMutableFlow.first { it != null } as TreeBasedFrontendProjectViewPane
   }
 }
 

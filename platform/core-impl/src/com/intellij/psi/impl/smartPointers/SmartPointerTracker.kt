@@ -189,10 +189,13 @@ class SmartPointerTracker(initialModCount: Long) {
   }
 
   @Synchronized
-  internal fun getFileInfos(): List<FileElementInfo> = buildList(fileInfoList.size) {
+  internal fun getContextAwareInfos(): List<ContextAwareInfo> = buildList(selfInfoList.size + fileInfoList.size) {
+    selfInfoList.processAlivePointers { pointer ->
+      add(pointer.selfInfo)
+      true
+    }
     fileInfoList.processAlivePointers { pointer ->
-      val info = pointer.elementInfo as FileElementInfo
-      this@buildList.add(info)
+      add(pointer.elementInfo as FileElementInfo)
       true
     }
   }
@@ -200,6 +203,18 @@ class SmartPointerTracker(initialModCount: Long) {
   @TestOnly
   @Synchronized
   fun getSize(): Int = selfInfoList.size
+
+  /**
+   * Puts [mapping] into the queue of the pending context mappings.
+   *
+   * A benchmark needs this entry point, because a real context change costs much more than the
+   * composition of the queued mappings. See `SmartPointerRevalidationPerformanceTest`.
+   */
+  @TestOnly
+  @Synchronized
+  fun pushContextMappingForTests(mapping: Map<CodeInsightContext, CodeInsightContext?>) {
+    pushContextMapping(mapping)
+  }
 
   fun isPossiblyInvalidated(manager: SmartPointerManagerEx): Boolean =
     manager.possiblyInvalidationModCounter.modificationCount > validationModCount
@@ -226,7 +241,7 @@ class SmartPointerTracker(initialModCount: Long) {
 
     validationModCount = currentModCount
 
-    val allInfos = getSortedInfos() + getFileInfos()
+    val allInfos = getContextAwareInfos()
     if (allInfos.isEmpty()) {
       pendingContextMappings.clear()
       return

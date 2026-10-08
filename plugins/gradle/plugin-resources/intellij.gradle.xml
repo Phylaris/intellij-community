@@ -1,7 +1,6 @@
 <idea-plugin visibility="public">
   <!-- region Generated dependencies - run `Generate Product Layouts` to regenerate -->
   <dependencies>
-    <module name="intellij.platform.externalSystem.impl"/>
     <module name="intellij.gradle.toolingExtension"/>
     <module name="intellij.gradle.toolingExtension.impl"/>
     <module name="intellij.gradle.toolingProxy"/>
@@ -12,6 +11,7 @@
     <module name="intellij.libraries.gson"/>
     <module name="intellij.libraries.guava"/>
     <module name="intellij.libraries.ion"/>
+    <module name="intellij.libraries.jna"/>
     <module name="intellij.libraries.jspecify"/>
     <module name="intellij.libraries.kotlinx.coroutines.core"/>
     <module name="intellij.libraries.kryo5"/>
@@ -20,7 +20,9 @@
     <module name="intellij.platform.analysis"/>
     <module name="intellij.platform.backend.observation"/>
     <module name="intellij.platform.backend.workspace"/>
+    <module name="intellij.platform.buildView"/>
     <module name="intellij.platform.concurrency"/>
+    <module name="intellij.platform.consoleView"/>
     <module name="intellij.platform.core"/>
     <module name="intellij.platform.core.impl"/>
     <module name="intellij.platform.core.ui"/>
@@ -32,6 +34,7 @@
     <module name="intellij.platform.execution.impl"/>
     <module name="intellij.platform.externalSystem"/>
     <module name="intellij.platform.externalSystem.dependencyUpdater"/>
+    <module name="intellij.platform.externalSystem.impl"/>
     <module name="intellij.platform.ide.core"/>
     <module name="intellij.platform.ide.core.impl"/>
     <module name="intellij.platform.ide.impl"/>
@@ -48,6 +51,7 @@
     <module name="intellij.platform.smRunner"/>
     <module name="intellij.platform.statistics"/>
     <module name="intellij.platform.testRunner"/>
+    <module name="intellij.platform.util.annotations"/>
     <module name="intellij.platform.util.coroutines"/>
     <module name="intellij.platform.util.ex"/>
     <module name="intellij.platform.util.progress"/>
@@ -301,7 +305,7 @@
                  description="Use gradle stable resilient model fetch API to resolve gradle models"/>
     <registryKey key="gradle.use.resilient.model.fetch.unstable" defaultValue="false"
                  description="Use gradle unstable resilient model fetch API to resolve gradle models"/>
-    <registryKey key="gradle.build.toolwindow.single.console" defaultValue="true"
+    <registryKey key="gradle.build.toolwindow.single.console" defaultValue="false"
                  description="Use single console output for all execution nodes in Build tool window for Gradle execution"/>
 
     <commandLineInspectionProjectConfigurator implementation="org.jetbrains.plugins.gradle.GradleCommandLineProjectConfigurator"/>
@@ -406,8 +410,7 @@
     <action id="Gradle.ShowDaemons" class="org.jetbrains.plugins.gradle.internal.daemon.ShowGradleDaemonsAction"/>
 
     <action id="Gradle.ImportExternalProject" class="org.jetbrains.plugins.gradle.action.ImportProjectFromScriptAction" icon="GradleIcons.Gradle">
-      <add-to-group group-id="ProjectViewPopupMenuSettingsGroup" anchor="last"/>
-      <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+      <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
     </action>
   </actions>
   <projectListeners>

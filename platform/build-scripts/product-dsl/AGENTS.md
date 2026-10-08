@@ -15,8 +15,20 @@ defined there, not in a community-only checkout.
 
 1. **Run Generator** (performs compilation via Bazel — no extra compilation step needed):
    ```bash
+   ./build/jpsModelToBazel.cmd
    bazel run //platform/buildScripts:plugin-model-tool
+   bazel run //platform/buildScripts:plugin-model-tool -- --check
+   bazel run //:format.check
+   (cd community && bazel run //:format.check)
    ```
+
+   One generator run writes the Product DSL output and both dev-dist halves. The community half renders first.
+   Both halves read `build/bazel-targets.json`, and the community half takes the rows of the community modules.
+   After a rebase, run the whole recipe before a push.
+
+   A community-only checkout regenerates only its dev-dist half with `bazel run //build:dev_dist_generator`
+   from `community/`. Add `-- --check` to report a stale file. From the ultimate root, the check is
+   `bazel run @community//build:dev_dist_generator -- --check`.
 
    **Verification — must produce no changes:**
    - Do NOT just trust the generator's printed stats
@@ -75,6 +87,12 @@ bazel run //platform/buildScripts:plugin-model-tool -- --check --trace=/tmp/plug
 
 Open the file in the Jaeger UI, or in any tool that reads the Jaeger JSON format. Read the trace before you optimize
 the generator, because the trace states which stage owns the run.
+
+### Unused Inputs (`--unused-inputs`)
+
+`--unused-inputs=<file>` writes the declared Bazel inputs that the run did not read, in every mode. Without an
+explicit input manifest, the file is empty. The tool ignores an unknown flag. A misspelled `--unused-inputs` writes no
+file, and without `--check` the run still writes the generated files.
 
 ### Adding Debug Statements
 

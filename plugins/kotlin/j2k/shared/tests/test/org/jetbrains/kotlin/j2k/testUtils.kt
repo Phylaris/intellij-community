@@ -14,6 +14,7 @@ import com.intellij.psi.search.LocalSearchScope
 import com.intellij.psi.search.searches.ReferencesSearch
 import com.intellij.testFramework.IdeaTestUtil
 import com.intellij.testFramework.fixtures.DefaultLightProjectDescriptor
+import de.plushnikov.intellij.plugin.LombokTestUtil
 import org.jetbrains.kotlin.analysis.api.diagnostics.KaSeverity
 import org.jetbrains.kotlin.analysis.api.diagnostics.diagnostics
 import org.jetbrains.kotlin.analysis.api.permissions.KaAllowAnalysisOnEdt
@@ -33,6 +34,16 @@ val J2K_PROJECT_DESCRIPTOR: KotlinWithJdkAndRuntimeLightProjectDescriptor =
 
         override fun addDefaultLibraries(model: ModifiableRootModel) {
             DefaultLightProjectDescriptor.addJetBrainsAnnotationsWithTypeUse(model)
+        }
+    }
+
+val J2K_LOMBOK_PROJECT_DESCRIPTOR: KotlinWithJdkAndRuntimeLightProjectDescriptor =
+    object : KotlinWithJdkAndRuntimeLightProjectDescriptor() {
+        override fun getSdk(): Sdk = IdeaTestUtil.getMockJdk21()
+
+        override fun addDefaultLibraries(model: ModifiableRootModel) {
+            DefaultLightProjectDescriptor.addJetBrainsAnnotationsWithTypeUse(model)
+            LombokTestUtil.addLombokDependency(model)
         }
     }
 
@@ -95,6 +106,7 @@ fun getK2FileTextWithErrors(file: KtFile): String {
                 .filter { it.factoryName != "CLASSIFIER_REDECLARATION" && it.factoryName != "PACKAGE_CONFLICTS_WITH_CLASSIFIER" }
                 .filter { it.severity == KaSeverity.ERROR }
                 .map { it.defaultMessage.replace(oldChar = '\n', newChar = ' ') }
+                .sorted()
                 .toList()
         }
     }

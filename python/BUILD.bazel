@@ -1,30 +1,7 @@
 load("@community//build:tests-options.bzl", "jps_test")
-load("@jps_dynamic_deps_community//:targets.bzl", "dev_dist_plugin")
 load("@rules_jvm//:jvm.bzl", "jvm_library", "resourcegroup")
 load("//build:compiler-options.bzl", "create_kotlinc_options")
 load("//platform/build-scripts/bazel-rules:content_module_jar.bzl", "content_module_jar")
-
-### auto-generated section `dev intellij.pycharm.community.customization` start
-dev_dist_plugin(
-    content_modules = [
-        # do not sort,
-        "intellij.pycharm.community.ide.impl.promotion",
-        "intellij.pycharm.community.customization.shared",
-    ],
-    descriptor = "ide/resources/META-INF/plugin.xml",
-    descriptor_modules = ["intellij.pycharm.community.ide.impl.promotion"],
-    jars = {
-        "lib/pycharm-community-customization.jar": [
-            "intellij.pycharm.community.customization",
-            "intellij.pycharm.community.customization.shared",
-        ],
-    },
-    main_module = "intellij.pycharm.community.customization",
-    mode_refused_content_modules = {
-        "frontend": ["intellij.pycharm.community.ide.impl.promotion"],
-    },
-)
-### auto-generated section `dev intellij.pycharm.community.customization` end
 
 ### auto-generated section `dev intellij.python.community.impl` start
 content_module_jar(
@@ -71,6 +48,7 @@ resourcegroup(
     name = "pycharm-community_resources",
     srcs = glob(
         ["resources/**/*"],
+        exclude = ["resources/**/icon-robots.txt"],
     ),
     strip_prefix = "resources",
 )
@@ -429,6 +407,7 @@ jvm_library(
     resource_strip_prefix = "pluginResources",
     resources = glob(
         ["pluginResources/**/*"],
+        exclude = ["pluginResources/**/icon-robots.txt"],
     ),
     visibility = ["//visibility:public"],
     exports = [
@@ -475,6 +454,7 @@ jvm_library(
         "//platform/ide-core-impl",
         "//platform/ide-core",
         "//platform/platform-impl:ide-impl",
+        "//platform/platform-impl/error-tree-view",
         "//platform/lang-impl",
         "//libraries/guava",
         "//platform/indexing-impl",
@@ -574,6 +554,8 @@ jvm_library(
         "//platform/xdebugger-impl/rpc",
         "//platform/xdebugger-impl/ui",
         "//platform/execution",
+        "//platform/consoleView",
+        "//platform/consoleView/impl",
         "//platform/forms_rt:java-guiForms-rt",
         "//python/python-external-index:externalIndex",
         "//python/conda",
@@ -645,6 +627,7 @@ jvm_library(
         "//platform/ide-core-impl:ide-core-impl_test_lib",
         "//platform/ide-core:ide-core_test_lib",
         "//platform/platform-impl:ide-impl_test_lib",
+        "//platform/platform-impl/error-tree-view:error-tree-view_test_lib",
         "//platform/lang-impl:lang-impl_test_lib",
         "//libraries/guava:guava_test_lib",
         "//platform/indexing-impl:indexing-impl_test_lib",
@@ -741,6 +724,8 @@ jvm_library(
         "//platform/xdebugger-impl/rpc:rpc_test_lib",
         "//platform/xdebugger-impl/ui:ui_test_lib",
         "//platform/execution:execution_test_lib",
+        "//platform/consoleView:consoleView_test_lib",
+        "//platform/consoleView/impl:impl_test_lib",
         "//platform/forms_rt:java-guiForms-rt_test_lib",
         "//python/python-external-index:externalIndex_test_lib",
         "//python/conda:conda_test_lib",
@@ -1312,6 +1297,8 @@ jvm_library(
         "//python/python-psi-api:psi_test_lib",
         "//python/python-pytools/backend",
         "//python/python-pytools/backend:backend_test_lib",
+        "//python/common",
+        "//python/common:common_test_lib",
         "//python/python-pytools/frontend",
         "//python/python-pytools/frontend:frontend_test_lib",
         "//platform/xdebugger-api:debugger",
@@ -1447,6 +1434,10 @@ jvm_library(
         "//python/python-exec-service:community-execService_test_lib",
         "//platform/execution",
         "//platform/execution:execution_test_lib",
+        "//platform/consoleView",
+        "//platform/consoleView:consoleView_test_lib",
+        "//platform/consoleView/impl",
+        "//platform/consoleView/impl:impl_test_lib",
         "//libraries/jetcheck",
         "//libraries/jetcheck:jetcheck_test_lib",
         "//platform/forms_rt:java-guiForms-rt",
@@ -1510,12 +1501,20 @@ jvm_library(
         "//platform/lsp:lsp_test_lib",
         "//platform/lsp-impl",
         "//platform/lsp-impl:lsp-impl_test_lib",
+        "//platform/lsp/testFramework",
+        "//platform/lsp/testFramework:testFramework_test_lib",
         "//python/python-ty:ty",
         "//python/python-ty:ty_test_lib",
         "//python/python-ruff:ruff",
         "//python/python-ruff:ruff_test_lib",
         "//python/python-pyright:pyright",
         "//python/python-pyright:pyright_test_lib",
+        "//python/python-zuban:zuban",
+        "//python/python-zuban:zuban_test_lib",
+        "//python/python-zuban/common",
+        "//python/python-zuban/common:common_test_lib",
+        "//python/python-lsp-core/common",
+        "//python/python-lsp-core/common:common_test_lib",
         "//plugins/toml/core",
         "//plugins/toml/core:core_test_lib",
         "//python/python-poetry/backend",
@@ -1553,6 +1552,7 @@ jvm_library(
     resource_strip_prefix = "helpers",
     resources = glob(
         ["helpers/**/*"],
+        exclude = ["helpers/**/icon-robots.txt"],
     ),
     visibility = ["//visibility:public"],
 )

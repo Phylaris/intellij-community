@@ -25,19 +25,19 @@
     <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="module-library" exported="">
       <library name="kotlinc.analysis-api-k2" type="repository">
-        <properties include-transitive-deps="false" maven-id="org.jetbrains.kotlin:analysis-api-k2-for-ide:2.5.0-dev-8355">
+        <properties include-transitive-deps="false" maven-id="org.jetbrains.kotlin:analysis-api-k2-for-ide:2.5.0-dev-9840">
           <verification>
-            <artifact url="file://$MAVEN_REPOSITORY$/org/jetbrains/kotlin/analysis-api-k2-for-ide/2.5.0-dev-8355/analysis-api-k2-for-ide-2.5.0-dev-8355.jar">
-              <sha256sum>d23f735e8fb6fa16e87cc3ee2d43f02764eaa6b94c25154ad042ffa8fc98b586</sha256sum>
+            <artifact url="file://$MAVEN_REPOSITORY$/org/jetbrains/kotlin/analysis-api-k2-for-ide/2.5.0-dev-9840/analysis-api-k2-for-ide-2.5.0-dev-9840.jar">
+              <sha256sum>aa0f8823acf5e3168d08fa9e366e0c974306da5400195164e54ba50a370c6394</sha256sum>
             </artifact>
           </verification>
         </properties>
         <CLASSES>
-          <root url="jar://$MAVEN_REPOSITORY$/org/jetbrains/kotlin/analysis-api-k2-for-ide/2.5.0-dev-8355/analysis-api-k2-for-ide-2.5.0-dev-8355.jar!/" />
+          <root url="jar://$MAVEN_REPOSITORY$/org/jetbrains/kotlin/analysis-api-k2-for-ide/2.5.0-dev-9840/analysis-api-k2-for-ide-2.5.0-dev-9840.jar!/" />
         </CLASSES>
         <JAVADOC />
         <SOURCES>
-          <root url="jar://$MAVEN_REPOSITORY$/org/jetbrains/kotlin/analysis-api-k2-for-ide/2.5.0-dev-8355/analysis-api-k2-for-ide-2.5.0-dev-8355-sources.jar!/" />
+          <root url="jar://$MAVEN_REPOSITORY$/org/jetbrains/kotlin/analysis-api-k2-for-ide/2.5.0-dev-9840/analysis-api-k2-for-ide-2.5.0-dev-9840-sources.jar!/" />
         </SOURCES>
       </library>
     </orderEntry>
@@ -53,7 +53,6 @@
     <orderEntry type="module" module-name="intellij.java.frontback.psi.impl" scope="RUNTIME" />
     <orderEntry type="module" module-name="intellij.platform.backend" scope="RUNTIME" />
     <orderEntry type="module" module-name="intellij.platform.indexing" scope="RUNTIME" />
-    <orderEntry type="module" module-name="intellij.libraries.kotlinc.kotlin.compiler.fe10" scope="RUNTIME" />
     <orderEntry type="module" module-name="intellij.platform.ide.core" scope="RUNTIME" />
   </component>
 </module>

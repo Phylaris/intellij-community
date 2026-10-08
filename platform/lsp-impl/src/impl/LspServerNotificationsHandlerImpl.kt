@@ -23,6 +23,7 @@ import com.intellij.platform.lsp.api.LspBundle
 import com.intellij.platform.lsp.api.LspServerNotificationsHandler
 import com.intellij.platform.lsp.api.LspServerState
 import com.intellij.platform.lsp.impl.features.LspFeaturesRefreshing
+import com.intellij.platform.lsp.impl.features.executeCommandExpectingWorkspaceEdit
 import com.intellij.platform.lsp.impl.serviceView.LspClientConsole
 import com.intellij.platform.lsp.impl.serviceView.LspServiceViewSupport
 import com.intellij.platform.lsp.impl.util.LspWorkspaceEditApplier
@@ -75,7 +76,7 @@ internal class LspServerNotificationsHandlerImpl(private val lspClient: LspClien
   private val ansiDecoder = AnsiEscapeDecoder()
 
   /**
-   * When set (by [LspClientImpl.executeCommandExpectingWorkspaceEdit]), incoming `workspace/applyEdit` requests are handled by
+   * When set (by [executeCommandExpectingWorkspaceEdit]), incoming `workspace/applyEdit` requests are handled by
    * this handler instead of being applied in the usual way. Written and read on different threads, hence `@Volatile`.
    */
   @Volatile
@@ -167,7 +168,7 @@ internal class LspServerNotificationsHandlerImpl(private val lspClient: LspClien
     }
 
     if (needsFoldingUpdate) {
-      for (fileEditor in FileEditorManager.getInstance(project).getAllEditors()) {
+      for (fileEditor in FileEditorManager.getInstance(project).allEditors) {
         if (fileEditor is TextEditor) {
           // Also calls `DaemonCodeAnalyzer.restart` internally
           CodeFoldingManager.getInstance(project).scheduleAsyncFoldingUpdate(fileEditor.editor)
@@ -395,13 +396,6 @@ internal class LspServerNotificationsHandlerImpl(private val lspClient: LspClien
 
     lspClient.logInfo("window/logMessage ${params.type}: ${params.message}")
     serviceViewConsole()?.printLogMessage(params.type, params.message)
-    if (params.type == MessageType.Error || params.type == MessageType.Warning) {
-      doNotify(params.message, getNotificationType(params), LOG_ERRORS_WARNINGS_NOTIFICATION_GROUP)
-    }
-    else {
-      // Do not spam user with all the logs from the server. LOG_INFO_TRACE_NOTIFICATION_GROUP is silent by default.
-      doNotify(params.message, NotificationType.INFORMATION, LOG_INFO_TRACE_NOTIFICATION_GROUP)
-    }
   }
 
   override fun logTrace(params: LogTraceParams) {
@@ -410,7 +404,6 @@ internal class LspServerNotificationsHandlerImpl(private val lspClient: LspClien
     // no need to LOG.info() it additionally; LOG.debug() done in Lsp4jServerConnector.createMessageJsonHandler is enough.
     val message = if (params.verbose != null) "${params.message}\n${params.verbose}" else params.message
     serviceViewConsole()?.printTrace(message)
-    doNotify(message, NotificationType.INFORMATION, LOG_INFO_TRACE_NOTIFICATION_GROUP)
   }
 
   private fun serviceViewConsole(): LspClientConsole? = LspServiceViewSupport.getInstance(project).getOrCreateConsole(lspClient)
@@ -462,17 +455,5 @@ internal class LspServerNotificationsHandlerImpl(private val lspClient: LspClien
      * The value of this string must be equal to the `notificationGroup` id in the `intellij.platform.lsp.xml` file.
      */
     const val SHOW_MESSAGE_NOTIFICATION_GROUP = "LSP window/showMessage"
-
-    /**
-     * Default behavior: no balloon, only write to the Notifications tool window.
-     * The value of this string must be equal to the `notificationGroup` id in the `intellij.platform.lsp.xml` file.
-     */
-    private const val LOG_ERRORS_WARNINGS_NOTIFICATION_GROUP = "LSP window/logMessage: errors, warnings"
-
-    /**
-     * Default behavior: no notification. For development purposes, plugin developers may enable printing to the Notifications tool window.
-     * The value of this string must be equal to the `notificationGroup` id in the `intellij.platform.lsp.xml` file.
-     */
-    private const val LOG_INFO_TRACE_NOTIFICATION_GROUP = "LSP window/logMessage: info, log; $/logTrace"
   }
 }

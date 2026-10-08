@@ -6,6 +6,7 @@ import com.intellij.openapi.actionSystem.ActionGroup;
 import com.intellij.openapi.actionSystem.DefaultActionGroup;
 import com.intellij.openapi.actionSystem.ToggleAction;
 import com.intellij.openapi.actionSystem.ex.ActionUtil;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.event.VisibleAreaEvent;
 import com.intellij.openapi.editor.event.VisibleAreaListener;
@@ -14,8 +15,10 @@ import com.intellij.openapi.fileEditor.FileEditorState;
 import com.intellij.openapi.fileEditor.TextEditor;
 import com.intellij.openapi.fileEditor.TextEditorWithPreview;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.registry.RegistryManager;
 import com.intellij.ui.JBSplitter;
 import org.intellij.plugins.markdown.MarkdownBundle;
+import org.intellij.plugins.markdown.MarkdownUsageCollector;
 import org.intellij.plugins.markdown.editor.livepreview.MarkdownLivePreviewSpecKt;
 import org.intellij.plugins.markdown.settings.MarkdownSettings;
 import org.jetbrains.annotations.NotNull;
@@ -27,6 +30,7 @@ import java.util.Objects;
 public final class MarkdownEditorWithPreview extends TextEditorWithPreview implements MarkdownHeaderNavigationHandler {
   @VisibleForTesting
   public static final String LIVE_PREVIEW_PROPERTY = "markdown.editor.live.preview.layout";
+  public static final String LIVE_PREVIEW_REGISTRY_KEY = "markdown.live.preview.enabled";
   private static final String EDITOR_ONLY_ACTION_ID = "Markdown.Layout.EditorOnly";
   private static final String LIVE_PREVIEW_ACTION_ID = "Markdown.Layout.LivePreview";
 
@@ -39,7 +43,7 @@ public final class MarkdownEditorWithPreview extends TextEditorWithPreview imple
    */
   @Deprecated
   public MarkdownEditorWithPreview(@NotNull TextEditor editor, @NotNull MarkdownPreviewFileEditor preview, @NotNull Project project) {
-    this(editor, preview, project, MarkdownSettings.getInstance(project));
+    this(editor, preview, project, MarkdownSettings.getInstance());
   }
 
   public MarkdownEditorWithPreview(@NotNull TextEditor editor,
@@ -66,7 +70,10 @@ public final class MarkdownEditorWithPreview extends TextEditorWithPreview imple
 
     this.settings = settings;
     this.previewAvailable = previewAvailable;
-    MarkdownLivePreviewSpecKt.setLivePreviewEnabledness(editor.getEditor(), PropertiesComponent.getInstance().getBoolean(LIVE_PREVIEW_PROPERTY));
+    MarkdownLivePreviewSpecKt.setLivePreviewEnabledness(
+      editor.getEditor(),
+      RegistryManager.getInstance().is(LIVE_PREVIEW_REGISTRY_KEY) && PropertiesComponent.getInstance().getBoolean(LIVE_PREVIEW_PROPERTY)
+    );
 
     // allow launching actions while in preview mode;
     // FIXME: better solution IDEA-354102
@@ -75,7 +82,8 @@ public final class MarkdownEditorWithPreview extends TextEditorWithPreview imple
 
     autoScrollPreview = settings.isAutoScrollEnabled();
 
-    project.getMessageBus().connect(this).subscribe(MarkdownSettings.ChangeListener.TOPIC, new MarkdownSettings.ChangeListener() {
+    var messageBus = ApplicationManager.getApplication().getMessageBus();
+    messageBus.connect(this).subscribe(MarkdownSettings.ChangeListener.TOPIC, new MarkdownSettings.ChangeListener() {
       private boolean wasVerticalSplitBefore = settings.isVerticalSplit();
 
       @Override
@@ -117,9 +125,11 @@ public final class MarkdownEditorWithPreview extends TextEditorWithPreview imple
       }
     }
     super.setState(restoredState);
-    // "Preview layout" is a global default, so it must win over the per-file orientation
-    // that super.setState() restores from the editor state. See IJPL-253568.
-    handleLayoutChange(!settings.isVerticalSplit());
+    if (state instanceof MyFileEditorState editorState && editorState.getSplitLayout() != null) {
+      // "Preview layout" is a global default, so it must win over the per-file orientation
+      // restored from a full editor state. See IJPL-253568.
+      handleLayoutChange(!settings.isVerticalSplit());
+    }
   }
 
   @Override
@@ -134,6 +144,11 @@ public final class MarkdownEditorWithPreview extends TextEditorWithPreview imple
     setViewMode(Layout.SHOW_EDITOR, true);
   }
 
+  @Override
+  protected void initialize() {
+    MarkdownUsageCollector.logEditorLayoutChanged(this);
+  }
+
   /**
    * Returns true when the text editor is shown alone with Markdown live preview on.
    */
@@ -142,9 +157,15 @@ public final class MarkdownEditorWithPreview extends TextEditorWithPreview imple
   }
 
   private void setViewMode(@NotNull Layout layout, boolean livePreview) {
+    var oldLayout = getLayout();
+    var oldLivePreview = isLivePreviewLayout();
     PropertiesComponent.getInstance().setValue(LIVE_PREVIEW_PROPERTY, livePreview, false);
     MarkdownLivePreviewSpecKt.setLivePreviewEnabledness(myEditor.getEditor(), livePreview);
-    super.setLayout(supportedLayout(layout));
+    var newLayout = supportedLayout(layout);
+    super.setLayout(newLayout);
+    if (oldLayout != newLayout || oldLivePreview != isLivePreviewLayout()) {
+      MarkdownUsageCollector.logEditorLayoutChanged(this);
+    }
   }
 
   private @NotNull Layout supportedLayout(@NotNull Layout layout) {
@@ -208,6 +229,12 @@ public final class MarkdownEditorWithPreview extends TextEditorWithPreview imple
       }
 
       final Editor editor = event.getEditor();
+      if (event.getOldRectangle() != null && event.getOldRectangle().y == event.getNewRectangle().y) {
+        return;
+      }
+      if (((MarkdownPreviewFileEditor)myPreview).followEditor(editor)) {
+        return;
+      }
       int y = editor.getScrollingModel().getVerticalScrollOffset();
       int currentLine = editor instanceof EditorImpl ? editor.xyToLogicalPosition(new Point(0, y)).getLine() : y / editor.getLineHeight();
       if (currentLine == previousLine) {

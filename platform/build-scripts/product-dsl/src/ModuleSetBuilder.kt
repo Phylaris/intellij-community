@@ -195,14 +195,14 @@ class ModuleSetBuilder {
  * Example:
  * ```
  * fun lsp() = moduleSet("lsp") {
- *   embeddedModule("intellij.platform.lsp")
- *   embeddedModule("intellij.platform.lsp.impl")
+ *   module("intellij.platform.lsp")
+ *   module("intellij.platform.lsp.impl")
  *   module("intellij.platform.lsp.impl.structureView")
  * }
  *
  * // With module alias:
- * fun xmlWithoutStructureView() = moduleSet("xml.without.structureView", alias = "com.intellij.modules.xml") {
- *   module("intellij.xml.dom")
+ * fun featureX() = moduleSet("feature.x", alias = "com.intellij.modules.featureX") {
+ *   module("intellij.featureX")
  *   // ...
  * }
  *

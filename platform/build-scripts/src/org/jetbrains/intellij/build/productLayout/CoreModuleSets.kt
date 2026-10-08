@@ -92,18 +92,19 @@ object CoreModuleSets {
    *
    * **Don't use for:**
    * - Products needing IDE functionality → Use `coreIde()` instead
-   * - Products needing language support → Use `coreLang()` or `essentialMinimal()`
-   * - IDE products with editing capabilities → Use `essentialMinimal()` instead
+   * - Products needing language support → Use `coreLang()` or `CommunityModuleSets.essential()`
+   * - IDE products with editing capabilities → Use `CommunityModuleSets.essential()` instead
    *
    * @see coreIde for platform with basic IDE functionality
    * @see coreLang for platform with IDE and language support
-   * @see [CommunityModuleSets.essentialMinimal] for lightweight IDE with editing (most IDE products should use this)
+   * @see [CommunityModuleSets.essential] for an IDE with editing (most IDE products should use this)
    */
   fun corePlatform(): ModuleSet = moduleSet("core.platform", selfContained = true, outputModule = "intellij.platform.ide.core") {
     moduleSet(librariesPlatform())
     moduleSet(librariesDap())
     moduleSet(telemetry())
 
+    embeddedModule("intellij.platform.productMode")
     embeddedModule("intellij.platform.runtime.product")
     embeddedModule("intellij.platform.bazel.runfiles")
 
@@ -228,18 +229,18 @@ object CoreModuleSets {
    * coreIde → lang.core → ide.impl (all in proper order).
    *
    * **Use when:** Building products that need language support and IDE features but not
-   * the full essentialMinimal infrastructure (editor, search, RPC, backend/frontend split).
+   * the full `CommunityModuleSets.essential()` infrastructure (editor, search, RPC, backend/frontend split).
    *
-   * **⚠️ WARNING:** Most products should use `essentialMinimal()` instead, which includes
+   * **⚠️ WARNING:** Most products should use `CommunityModuleSets.essential()` instead, which includes
    * this module set plus essential IDE infrastructure (editor, search, RPC).
    *
-   * Only use this directly if you need language features but want to exclude editor/search/RPC modules.
+   * A lean product such as Draft uses this set directly and adds the feature sets of `CommunityModuleSets` that it needs.
    *
-   * **Products using this:** All products via `essentialMinimal()` which nests this module set
+   * **Products using this:** All products via `CommunityModuleSets.essential()` which nests this module set
    *
    * @see coreIde for IDE functionality without language support
    * @see corePlatform for base platform without IDE or language support
-   * @see [CommunityModuleSets.essentialMinimal] for full minimal IDE (includes this + RPC + editor + search) - RECOMMENDED
+   * @see [CommunityModuleSets.essential] for a full IDE (includes this + RPC + editor + search) - RECOMMENDED
    */
   fun coreLang(): ModuleSet = moduleSet("core.lang") {
     // Include core IDE (corePlatform + intellij.platform.ide)
@@ -256,8 +257,10 @@ object CoreModuleSets {
     // consumed by intellij.platform.ide.bootstrap; also PROVIDED-depends on intellij.platform.ide.impl
     embeddedModule("intellij.platform.icons.impl.intellij")
 
-    embeddedModule("intellij.platform.execution")
-    embeddedModule("intellij.platform.execution.impl")
+    embeddedModule("intellij.platform.consoleView")
+    embeddedModule("intellij.platform.consoleView.impl")
+    module("intellij.platform.execution")
+    module("intellij.platform.execution.impl")
 
     // intellij.platform.lang depends on it
     embeddedModule("intellij.platform.lvcs")
@@ -282,6 +285,11 @@ object CoreModuleSets {
     embeddedModule("intellij.platform.indexing.impl")
     embeddedModule("intellij.platform.refactoring")
     embeddedModule("intellij.platform.ide.impl")
+    embeddedModule("intellij.platform.undo")
+    embeddedModule("intellij.platform.ui.tree")
+    embeddedModule("intellij.platform.vfs.impl")
+    embeddedModule("intellij.platform.ide.json")
+    embeddedModule("intellij.platform.ide.dnd")
     embeddedModule("intellij.platform.ide.codeinsight.inline")
     embeddedModule("intellij.platform.pasta")
     embeddedModule("intellij.platform.diagnostic.startUpPerformanceReporter")
@@ -298,12 +306,28 @@ object CoreModuleSets {
     embeddedModule("intellij.platform.rd.community")
 
     embeddedModule("intellij.platform.remote.core")
-    embeddedModule("intellij.platform.ide.remote")
-    embeddedModule("intellij.platform.threadDumpParser")
-    embeddedModule("intellij.platform.ide.favoritesTreeView")
+    module("intellij.platform.ide.remote")
+    // intellij.platform.ide.impl shows the color picker popup through the service of this module
+    module("intellij.platform.ide.colorPicker")
+    // intellij.platform.ide.impl captures and analyzes heap dumps through the service of this module
+    module("intellij.platform.ide.hprof")
+    // intellij.platform.execution.impl creates the error tree view through the service of this module
+    module("intellij.platform.ide.errorTreeView")
+    // keeps the Learn tab in every product with ide.impl
+    module("intellij.platform.ide.learnIde")
+    module("intellij.platform.ide.playback")
+    // intellij.platform.ide.impl creates the universal file chooser through the service of this module
+    module("intellij.platform.ide.fileChooser.universal")
+    // intellij.platform.ide.impl opens tool window tabs in the editor through the service of this module
+    module("intellij.platform.ide.tabInEditor")
+    module("intellij.platform.threadDumpParser")
+    module("intellij.platform.ide.favoritesTreeView")
     // todo not used by platform - move to plugin
-    embeddedModule("intellij.platform.ide.designer")
+    module("intellij.platform.ide.designer")
 
+    // intellij.platform.ide.bootstrap imports the config before any plugin class loader exists,
+    // and intellij.platform.configurationStore.impl uses it too
+    embeddedModule("intellij.platform.ide.initialConfigImport")
     embeddedModule("intellij.platform.ide.bootstrap")
     embeddedModule("intellij.platform.bootstrap")
 
@@ -313,8 +337,7 @@ object CoreModuleSets {
     // Additional dependencies specific to lang.impl and ide.impl
     embeddedModule("intellij.platform.ide.concurrency")
     embeddedModule("intellij.platform.builtInServer")
-    embeddedModule("intellij.platform.discoverability")
-    module("intellij.platform.externalSystem")
+    module("intellij.platform.discoverability")
     embeddedModule("intellij.platform.eel.impl")
     embeddedModule("intellij.platform.eel.nioFs.impl")
     embeddedModule("intellij.platform.eel.impl.base")
@@ -390,7 +413,8 @@ object CoreModuleSets {
    * in `corePlatform()`. It only adds the backend/frontend/topics modules on top of the base.
    * 
    * **Use when:** Building products that need full RPC functionality with backend separation.
-   * Products using `essentialMinimal()` get both `rpcMinimal()` (via corePlatform) and this module set.
+   * Products using `CommunityModuleSets.essential()` get both `rpcMinimal()` (via corePlatform) and this module set
+   * through `CommunityModuleSets.splitCore()`.
    * 
    * @see rpcMinimal for base RPC and kernel modules (included in corePlatform)
    */
@@ -398,10 +422,11 @@ object CoreModuleSets {
     // Base RPC (rpcMinimal) already available from corePlatform
     // Only add backend/frontend/topics functionality
     module("intellij.platform.rpc.backend")
+    module("intellij.platform.kernel.backend.baseline")
     module("intellij.platform.kernel.backend")
     module("intellij.platform.kernel.impl")
 
-    embeddedModule("intellij.platform.rpc.topics")
+    module("intellij.platform.rpc.topics")
     module("intellij.platform.rpc.topics.backend")
     module("intellij.platform.rpc.topics.frontend")
   }

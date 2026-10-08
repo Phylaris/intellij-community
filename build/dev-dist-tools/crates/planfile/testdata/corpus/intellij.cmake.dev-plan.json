@@ -2,7 +2,6 @@
     "version": 2,
     "plugin": "intellij.cmake",
     "variant": "",
-    "layoutSignature": "15v9xhnxq7dfzip1cpm7oabf",
     "assets": [
         {
             "module": "intellij.cmake.json"
@@ -101,18 +100,6 @@
             ],
             "kind": "tree",
             "classPath": false
-        }
-    ],
-    "preparations": [
-        {
-            "id": "layout-assets:resource-generator:0",
-            "inputs": [
-                "cidr-dependency:cmake-quickdoc:any:any"
-            ],
-            "outputs": [
-                "layout-assets:resource-generator:0:output"
-            ],
-            "modelSignature": "aykivv8uexzvw4xx6jtmmi24j"
         }
     ],
     "operations": [

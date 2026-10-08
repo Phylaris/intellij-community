@@ -7,15 +7,15 @@ import com.intellij.openapi.observable.properties.PropertyGraph
 import com.intellij.openapi.observable.util.and
 import com.intellij.openapi.observable.util.isNotNull
 import com.intellij.openapi.observable.util.or
-import com.intellij.openapi.projectRoots.Sdk
 import com.intellij.openapi.ui.validation.WHEN_PROPERTY_CHANGED
+import com.intellij.platform.eel.EelApi
 import com.intellij.python.pytools.backend.Version
+import com.intellij.python.sdk.backend.PythonInterpreter
 import com.intellij.ui.dsl.builder.Panel
 import com.intellij.ui.dsl.builder.bindText
 import com.intellij.util.asDisposable
 import com.intellij.util.concurrency.annotations.RequiresEdt
 import com.intellij.util.ui.launchOnShow
-import com.jetbrains.python.EEL_FOR_NEW_PROJECTS
 import com.jetbrains.python.PyBundle.message
 import com.jetbrains.python.Result
 import com.jetbrains.python.TraceContext
@@ -29,7 +29,8 @@ import com.jetbrains.python.sdk.add.v2.PythonInterpreterSelectionMode.BASE_CONDA
 import com.jetbrains.python.sdk.add.v2.PythonInterpreterSelectionMode.CUSTOM
 import com.jetbrains.python.sdk.add.v2.PythonInterpreterSelectionMode.PROJECT_UV
 import com.jetbrains.python.sdk.add.v2.PythonInterpreterSelectionMode.PROJECT_VENV
-import com.jetbrains.python.sdk.add.v2.conda.selectCondaEnvironment
+import com.jetbrains.python.sdk.add.v2.conda.createSdkFromCondaEnv
+import com.jetbrains.python.sdk.add.v2.conda.getCondaEnvOrError
 import com.jetbrains.python.sdk.add.v2.uv.UvInterpreterSection
 import com.jetbrains.python.sdk.add.v2.venv.setupVirtualenv
 import com.jetbrains.python.sdk.add.v2.venv.venvBaseVersionError
@@ -68,11 +69,9 @@ interface PySdkPanelBuilder {
   fun onShownInitialization(scopingComponent: Component)
 }
 
-/**
- * If `onlyAllowedInterpreterTypes` then only these types are displayed. All types displayed otherwise
- */
 internal class PythonSdkPanelBuilderAndSdkCreator(
-  private val limitExistingEnvironments: Boolean = true,
+  private val context: InterpreterCreationContext = InterpreterCreationContext.NEW_PROJECT_WIZARD,
+  private val eel: EelApi
 ) : PySdkPanelBuilder, PySdkCreator {
   private val propertyGraph = PropertyGraph()
 
@@ -110,17 +109,17 @@ internal class PythonSdkPanelBuilderAndSdkCreator(
     // To support project creation on new WSL we would need to derive eel from pathFlow
     // That means we would need to rebuild the whole UI as soon as it changes
     // While it is possible, it cost time, and we postpone for now
-    model = PythonLocalAddInterpreterModel(projectPathFlows, EelFileSystem(EEL_FOR_NEW_PROJECTS))
+    model = PythonLocalAddInterpreterModel(projectPathFlows, EelFileSystem(eel))
     model.navigator.selectionMode = selectedMode
     propertyGraph.dependsOn(_venvBaseValid, model.state.baseInterpreter, deleteWhenChildModified = false) {
       model.state.baseInterpreter.get()?.let { venvBaseVersionError(it) == null } ?: true
     }
-    uvSection = UvInterpreterSection(model, selectedMode, propertyGraph)
+    uvSection = UvInterpreterSection(model, selectedMode, propertyGraph, context)
 
     custom = PythonAddCustomInterpreter(model = model,
                                         module = null,
                                         errorSink = ErrorSink(),
-                                        limitExistingEnvironments = limitExistingEnvironments,
+                                        context = context,
                                         bestGuessCreateSdkInfo = CompletableDeferred(value = null))
 
     val validationRequestor = WHEN_PROPERTY_CHANGED(selectedMode)
@@ -201,24 +200,27 @@ internal class PythonSdkPanelBuilderAndSdkCreator(
     }
   }
 
-  override suspend fun getSdk(moduleOrProject: ModuleOrProject): PyResult<Pair<Sdk, InterpreterStatisticsInfo>> {
+  override suspend fun getSdk(moduleOrProject: ModuleOrProject): PyResult<Pair<PythonInterpreter, InterpreterStatisticsInfo>> {
     model.navigator.saveLastState()
 
-    val sdk = when (selectedMode.get()) {
+    val pythonInterpreter = when (selectedMode.get()) {
       PROJECT_VENV -> {
         val projectPath = model.projectPathFlows.projectPathWithDefault.first()
         // todo just keep venv path, all the rest is in the model
         val venvFolder = PathHolder.Eel(projectPath.resolve(VirtualEnvReader.DEFAULT_VIRTUALENV_DIRNAME))
         model.setupVirtualenv(venvFolder, moduleOrProject)
       }
-      BASE_CONDA -> model.selectCondaEnvironment(moduleOrProject, base = true)
+      BASE_CONDA -> {
+        val baseEnv = model.getCondaEnvOrError(base = true).getOr { return it }
+        model.createSdkFromCondaEnv(moduleOrProject, baseEnv)
+      }
       PROJECT_UV -> uvSection.getUvCreator().setupSdk(moduleOrProject)
       CUSTOM -> custom.currentSdkManager.setupSdk(moduleOrProject)
     }.getOr { return it }
 
     val statistics = withContext(Dispatchers.EDT) { createStatisticsInfo() }
-    PythonNewInterpreterAddedCollector.logPythonNewInterpreterAdded(sdk, statistics.previouslyConfigured)
-    return Result.success(Pair(sdk, statistics))
+    PythonNewInterpreterAddedCollector.logPythonNewInterpreterAdded(pythonInterpreter, statistics.previouslyConfigured)
+    return Result.success(Pair(pythonInterpreter, statistics))
   }
 
   private fun createStatisticsInfo(): InterpreterStatisticsInfo = when (selectedMode.get()) {

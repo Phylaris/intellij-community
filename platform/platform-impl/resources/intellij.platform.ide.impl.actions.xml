@@ -14,7 +14,6 @@
     <action id="FileChooser.LightEditGotoOpenedFile"
             class="com.intellij.ide.lightEdit.actions.LightEditGotoOpenedFileAction"
             icon="AllIcons.General.Locate"/>
-    <action id="DumpCodeStyleCache" class="com.intellij.ide.actions.DumpCodeStyleCacheAction" internal="true"/>
     <action id="DumpPluginDescriptorsAction" class="com.intellij.internal.DumpPluginDescriptorsAction" internal="true"/>
     <action id="List-selectFirstRow" class="com.intellij.ui.ListActions$Home" use-shortcut-of="EditorTextStart"/>
     <action id="List-selectFirstRowExtendSelection" class="com.intellij.ui.ListActions$ShiftHome"
@@ -358,11 +357,6 @@
     <action id="EditorAddCaretPerSelectedLine" class="com.intellij.openapi.editor.actions.AddCaretPerSelectedLineAction"/>
     <action id="ConvertIndentsToSpaces" class="com.intellij.openapi.editor.actions.ConvertIndentsToSpacesAction"/>
     <action id="ConvertIndentsToTabs" class="com.intellij.openapi.editor.actions.ConvertIndentsToTabsAction"/>
-    <action id="PlaybackLastMacro" class="com.intellij.ide.actionMacro.actions.PlaybackLastMacroAction"/>
-    <action id="StartStopMacroRecording" class="com.intellij.ide.actionMacro.actions.StartStopMacroRecordingAction"/>
-    <action id="EditMacros" class="com.intellij.ide.actionMacro.actions.EditMacrosAction"/>
-    <action id="PlaySavedMacrosAction" class="com.intellij.ide.actionMacro.actions.PlaySavedMacros"/>
-    <group id="MacrosGroup" class="com.intellij.ide.actionMacro.actions.MacrosGroup"/>
     <action id="EmojiAndSymbols" class="com.intellij.ide.actions.MacEmojiAndSymbolsInputAction"/>
     <group id="ToolWindowsGroup" class="com.intellij.ide.actions.ToolWindowsGroup" popup="true"/>
     <action id="TogglePresentationMode" class="com.intellij.ide.actions.TogglePresentationModeAction">
@@ -386,8 +380,6 @@
     <action id="SwitchIdeScaleAction" class="com.intellij.ide.actions.SwitchIdeScaleAction">
       <synonym key="action.SwitchIdeScaleAction.text"/>
     </action>
-    <action id="TogglePresentationAssistantAction"
-            class="com.intellij.platform.ide.impl.presentationAssistant.TogglePresentationAssistantAction"/>
     <action id="ViewMainMenu" class="com.intellij.ide.actions.ViewMainMenuAction"/>
     <group id="ChangeMainMenuModeActionGroup"
            class="com.intellij.ide.actions.ChangeMainMenuModeActionGroup" searchable="false" popup="true"/>
@@ -446,12 +438,6 @@
     <action id="HideSideWindows" class="com.intellij.ide.actions.HideSideWindowsAction"/>
     <action id="HideBottomWindows" class="com.intellij.ide.actions.HideBottomToolWindowsAction"/>
     <action id="HideAllWindows" class="com.intellij.ide.actions.HideAllToolWindowsAction"/>
-    <action id="MoveToolWindowTabToEditorAction" class="com.intellij.openapi.wm.impl.tabInEditor.MoveToolWindowTabToEditorAction"
-            icon="AllIcons.Actions.OpenNewTab">
-      <add-to-group group-id="ToolWindowTabContextMenu"/>
-    </action>
-    <action id="MoveToolWindowTabFromEditorToToolWindowAction" class="com.intellij.openapi.wm.impl.tabInEditor.MoveToolWindowTabFromEditorToToolWindowAction"
-            icon="AllIcons.General.OpenInToolWindow"/>
     <action id="PinToolwindowTab" class="com.intellij.ui.content.tabs.PinToolwindowTabAction" use-shortcut-of="PinActiveTab"/>
     <action id="JumpToLastWindow" class="com.intellij.ide.actions.JumpToLastWindowAction"/>
     <action id="MaximizeToolWindow" class="com.intellij.openapi.wm.impl.MaximizeToolWindowAction"/>
@@ -534,7 +520,6 @@
     <action id="CollectZippedLogs" class="com.intellij.ide.actions.CollectZippedLogsAction"/>
     <action id="Performance.ActivityMonitor" class="com.intellij.ide.actions.ActivityMonitorAction"/>
     <action id="Performance.DumpThreads" class="com.intellij.ide.actions.DumpThreadsAction"/>
-    <action id="Performance.MemTester" class="com.intellij.ide.actions.MemTestAction"/>
     <action id="LogDebugConfigure" class="com.intellij.ide.actions.DebugLogConfigureAction"/>
     <action id="BrowseSpecialPaths" class="com.intellij.diagnostic.specialPaths.BrowseSpecialPathsAction"/>
     <action id="CollectTroubleshootingInformation" class="com.intellij.troubleshooting.ui.CollectTroubleshootingInformationAction"
@@ -546,6 +531,7 @@
     <action id="CheckForUpdate" class="com.intellij.openapi.updateSettings.impl.CheckForUpdateAction">
       <override-text place="WelcomeScreen"/>
     </action>
+    <action id="ResetPluginPermissions" class="com.intellij.openapi.updateSettings.impl.ResetPluginPermissionsAction"/>
     <action id="About" class="com.intellij.ide.actions.AboutAction"/>
     <!--suppress PluginXmlCapitalization -->
     <action id="ZoomInIdeAction" class="com.intellij.ide.actions.ZoomInIdeAction">
@@ -572,6 +558,11 @@
     <action id="OpenEditorInOppositeTabGroup" class="com.intellij.openapi.fileEditor.impl.OpenEditorInOppositeTabGroupAction"/>
     <action id="WelcomeScreen.OpenDirectoryProject" class="com.intellij.ide.actions.OpenFileAction$OnWelcomeScreen"/>
     <action id="WelcomeScreen.OpenSelected" class="com.intellij.openapi.wm.impl.welcomeScreen.projectActions.OpenSelectedProjectsAction"/>
+    <action id="WelcomeScreen.CancelRecentProjectTask"
+            class="com.intellij.openapi.wm.impl.welcomeScreen.projectActions.CancelRecentProjectTaskAction"
+            icon="AllIcons.Actions.DeleteTag"/>
+    <action id="WelcomeScreen.Branches" class="com.intellij.openapi.wm.impl.welcomeScreen.projectActions.BranchesRecentProjectAction"
+            icon="AllIcons.Vcs.Branch"/>
     <action id="WelcomeScreen.RevealIn" class="com.intellij.openapi.wm.impl.welcomeScreen.projectActions.RevealProjectDirAction"/>
     <action id="WelcomeScreen.CopyProjectPath" class="com.intellij.openapi.wm.impl.welcomeScreen.projectActions.CopyProjectPathAction"
             use-shortcut-of="CopyPaths"/>
@@ -624,7 +615,6 @@
     <action id="ChangeIdeScale" class="com.intellij.ide.actions.QuickChangeIdeScaleAction">
       <override-text place="GoToAction"/>
     </action>
-    <action id="ShowExperiments" class="com.intellij.application.ShowExperimentsAction"/>
     <action id="MoveFileToAnotherModule" internal="true" class="com.intellij.ide.actions.MoveFileToAnotherModuleAction"/>
     <action id="CreateAllServicesAndExtensions" internal="true"
             class="com.intellij.ide.plugins.CreateAllServicesAndExtensionsAction"/>
@@ -684,11 +674,6 @@
     <action id="ToggleFloatingMode" class="com.intellij.ide.actions.ToggleFloatingModeAction"/>
     <action id="ToggleWindowedMode" class="com.intellij.ide.actions.ToggleWindowedModeAction"/>
     <action id="ToggleSideMode" class="com.intellij.ide.actions.ToggleSideModeAction"/>
-    <action id="UserInvokedFullAnalysis" class="com.intellij.diagnostic.hprof.action.InternalUserInvokedFullAnalysisAction"
-            internal="true"/>
-    <action id="SilentHeapDumpSnapshot" class="com.intellij.diagnostic.hprof.action.InternalNonuserInvokedHeapDumpSnapshotAction"
-            internal="true"/>
-    <action id="AnalyzeHeapDumpSnapshot" class="com.intellij.diagnostic.hprof.action.AnalyzeReportAction" internal="true"/>
     <action id="TriggerLowMemoryNotification" class="com.intellij.diagnostic.TriggerLowMemoryNotificationAction" internal="true"/>
     <action id="OpenMouseWheelSmoothScrollSettings" class="com.intellij.ui.mouse.MouseWheelSmoothScrollOptionsAction"/>
     <action id="EditorToggleShowBreadcrumbs" class="com.intellij.xml.breadcrumbs.ToggleBreadcrumbsAction$ShowHide"/>
@@ -713,9 +698,6 @@
            popup="false"/>
     <group id="ChangeProjectColorActionGroup"
            class="com.intellij.openapi.wm.impl.welcomeScreen.projectActions.ChangeProjectColorActionGroup" searchable="false" popup="true"/>
-    <group id="PresentationAssistantQuickSettingsGroup"
-           class="com.intellij.platform.ide.impl.presentationAssistant.PresentationAssistantQuickSettingsGroup" searchable="false"
-           popup="true"/>
     <action id="ColoredHeaderAction" class="com.intellij.ide.ui.customization.UseProjectColorsCheckboxAction"/>
     <action id="MergeMenuWithWindowTitleAction" class="com.intellij.ide.actions.MergeMenuWithWindowTitleAction"/>
     <action id="FocusMainToolbar" class="com.intellij.openapi.wm.impl.headertoolbar.FocusMainToolbarAction">
@@ -761,6 +743,8 @@
             id="PluginUpdateSourcesResetAction"/>
     <action class="com.intellij.openapi.updateSettings.impl.PluginUpdateSourcesReinitializeAction" internal="true"
             id="PluginUpdateSourcesReinitializeAction"/>
+    <action class="com.intellij.openapi.updateSettings.impl.InitializeMissingPluginUpdateSourcesAction"
+            id="InitializeMissingPluginUpdateSourcesAction"/>
     <group id="SettingsEntryPointGroup" class="com.intellij.ide.actions.SettingsEntryPointGroup" overrides="true" keep-content="true"/>
     <group id="Floating.CodeToolbar.Surround" class="com.intellij.ui.codeFloatingToolbar.RefactorDropdownActionGroup" overrides="true" keep-content="true"/>
     <group id="ChangeLineSeparators" class="com.intellij.ide.actions.NonTrivialActionGroup" overrides="true" keep-content="true"/>

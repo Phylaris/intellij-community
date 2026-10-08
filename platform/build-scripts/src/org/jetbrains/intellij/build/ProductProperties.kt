@@ -6,7 +6,7 @@ import com.intellij.platform.buildData.productInfo.CustomProperty
 import com.intellij.platform.buildScripts.licenses.COMMUNITY_LICENSES_LIST
 import com.intellij.platform.buildScripts.licenses.LibraryLicense
 import com.intellij.platform.buildScripts.licenses.SoftwareBillOfMaterials
-import com.intellij.platform.runtime.product.ProductMode
+import com.intellij.platform.productMode.ProductMode
 import com.jetbrains.plugin.structure.base.plugin.PluginCreationFail
 import com.jetbrains.plugin.structure.base.plugin.PluginCreationResult
 import com.jetbrains.plugin.structure.base.plugin.PluginCreationSuccess
@@ -175,12 +175,6 @@ abstract class ProductProperties {
     "${appInfo.fullProductName}${appInfo.majorVersion}.${appInfo.minorVersionMainPart}"
 
   /**
-   * If `true`, Alt+Button1 shortcut will be removed from 'Quick Evaluate Expression' action and assigned to 'Add/Remove Caret' action
-   * (instead of Alt+Shift+Button1) in the default keymap.
-   */
-  var reassignAltClickToMultipleCarets: Boolean = false
-
-  /**
    * Now a file containing information about third-party libraries is bundled and shown inside the IDE.
    * If `true`, HTML & JSON files of third-party libraries will be placed alongside built artifacts.
    */
@@ -325,7 +319,9 @@ abstract class ProductProperties {
 
   /**
    * Maps each native library name (as extracted by `getLibNameBySourceFile`) to its output folder name under `lib/`.
-   * Libraries listed here have their native files extracted to `lib/<folderName>/` rather than embedded in JARs.
+   * The build extracts the native files of a library listed here to a folder instead of the jar.
+   * For a plugin jar, the folder is `plugins/<plugin directory>/lib/<folderName>/`, next to the jar.
+   * For a platform jar, the folder is `lib/<folderName>/` of the distribution root.
    * Use the same string for key and value when no renaming is needed.
    */
   var presignedNativeLibs: Map<String, String> = emptyMap()
@@ -567,7 +563,9 @@ abstract class ProductProperties {
     val patchVersion: String?,
     val fullVersionFormat: String?,
     val versionSuffix: String?,
-    val majorReleaseDate: String?
+    val majorReleaseDate: String?,
+    /** The `reassignAltClickToMultipleCarets` attribute of the `keymap` element. `null` removes the element. */
+    val reassignAltClickToMultipleCarets: String? = null,
   )
 
   /**

@@ -2,7 +2,6 @@
     "version": 2,
     "plugin": "intellij.rider.plugins.efCore",
     "variant": "",
-    "layoutSignature": "2zawjcgmjae9ry0wb1wu377kw",
     "assets": [
         {
             "destination": "lib/rider-plugins-efCore.jar",
@@ -35,18 +34,6 @@
             ],
             "kind": "tree",
             "classPath": false
-        }
-    ],
-    "preparations": [
-        {
-            "id": "layout-assets:resource-generator:0",
-            "inputs": [
-                "optional-local-directory:out/bundle-plugins/rider-efcore"
-            ],
-            "outputs": [
-                "layout-assets:resource-generator:0:output"
-            ],
-            "modelSignature": "6dj9hxeh8y3v9l3mh6ovjxvjc"
         }
     ],
     "operations": [

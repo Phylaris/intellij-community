@@ -50,7 +50,6 @@ public final class PathManager {
   public static final String OPTIONS_DIRECTORY = "options";
   public static final String DEFAULT_EXT = ".xml";
 
-  private static final String PROPERTY_HOME = "idea.home";  // a reduced variant of PROPERTY_HOME_PATH, now deprecated
   private static final String PROPERTY_VENDOR_NAME = "idea.vendor.name";
 
   private static final String JRE_DIRECTORY = "jbr";
@@ -125,7 +124,6 @@ public final class PathManager {
       if (result != null) return result;
 
       Path explicit = getExplicitPath(PROPERTY_HOME_PATH);
-      if (explicit == null) explicit = getExplicitPath(PROPERTY_HOME);
       if (explicit != null) {
         result = explicit;
         if (!Files.isDirectory(result)) {
@@ -477,6 +475,7 @@ public final class PathManager {
     Path path = ourConfigPath;
     if (path == null) {
       Path explicit = getExplicitPath(PROPERTY_CONFIG_PATH);
+      //noinspection SSBasedInspection
       ourConfigPath = path = (
         explicit != null ? explicit :
         ourPathSelector != null ? Paths.get(getDefaultConfigPathFor(ourPathSelector)) :
@@ -511,6 +510,7 @@ public final class PathManager {
     Path path = ourScratchPath;
     if (path == null) {
       Path explicit = getExplicitPath(PROPERTY_SCRATCH_PATH);
+      //noinspection SSBasedInspection
       ourScratchPath = path = explicit == null ? getConfigDir() : explicit;
     }
     return path;
@@ -561,6 +561,7 @@ public final class PathManager {
     Path path = ourPluginPath;
     if (path == null) {
       Path explicit = getExplicitPath(PROPERTY_PLUGINS_PATH);
+      //noinspection SSBasedInspection
       ourPluginPath = path = (
         explicit != null ? explicit :
         ourPathSelector != null && System.getProperty(PROPERTY_CONFIG_PATH) == null ? Paths.get(getDefaultPluginPathFor(ourPathSelector)) :
@@ -596,6 +597,7 @@ public final class PathManager {
     Path path = ourSystemPath;
     if (path == null) {
       Path explicit = getExplicitPath(PROPERTY_SYSTEM_PATH);
+      //noinspection SSBasedInspection
       ourSystemPath = path = (
         explicit != null ? explicit :
         ourPathSelector != null ? Paths.get(getDefaultSystemPathFor(ourPathSelector)) :
@@ -658,6 +660,7 @@ public final class PathManager {
     Path path = ourLogPath;
     if (path == null) {
       Path explicit = getExplicitPath(PROPERTY_LOG_PATH);
+      //noinspection SSBasedInspection
       ourLogPath = path =
         explicit != null ? explicit :
         ourPathSelector != null && System.getProperty(PROPERTY_SYSTEM_PATH) == null ? Paths.get(getDefaultLogPathFor(ourPathSelector)) :
@@ -773,7 +776,6 @@ public final class PathManager {
     }
 
     if (resultPath == null) {
-      //noinspection GrazieInspection
       log("cannot extract '" + resourcePath + "' from '" + resourceURL + "'");
       return null;
     }
@@ -857,7 +859,7 @@ public final class PathManager {
         new Properties() {
           @Override
           public Object put(Object key, Object value) {
-            if (PROPERTY_HOME_PATH.equals(key) || PROPERTY_HOME.equals(key)) {
+            if (PROPERTY_HOME_PATH.equals(key)) {
               log(file + ": '" + key + "' cannot be redefined");
             }
             else if (!sysProperties.containsKey(key)) {
@@ -942,7 +944,8 @@ public final class PathManager {
     if (s == null) return null;
 
     if (s.startsWith("..")) {
-      s = ideaHomePath + '/' + BIN_DIRECTORY + '/' + s;
+      @SuppressWarnings({"IO_FILE_USAGE", "UnnecessaryFullyQualifiedName"}) char separator = java.io.File.separatorChar;
+      s = ideaHomePath + separator + BIN_DIRECTORY + separator + s;
     }
 
     Matcher m = Lazy.PROPERTY_REF.matcher(s);
@@ -953,7 +956,6 @@ public final class PathManager {
       if (value == null) {
         switch (key) {
           case PROPERTY_HOME_PATH:
-          case PROPERTY_HOME:
             value = ideaHomePath;
             break;
           case PROPERTY_CONFIG_PATH:

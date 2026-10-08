@@ -1,6 +1,8 @@
 // Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.python.lsp.core
 
+import com.intellij.python.pyproject.model.evolution.EvoPyProjectModel
+import com.intellij.python.pyproject.model.evolution.evoPyProjects
 import com.intellij.openapi.application.readAction
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.components.Service
@@ -10,7 +12,6 @@ import com.intellij.openapi.module.Module
 import com.intellij.openapi.project.ModuleListener
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.modules
-import com.intellij.openapi.projectRoots.Sdk
 import com.intellij.openapi.roots.ModuleRootManager
 import com.intellij.openapi.roots.ProjectRootModificationTracker
 import com.intellij.openapi.util.io.FileUtil
@@ -25,15 +26,19 @@ import com.intellij.psi.util.CachedValueProvider
 import com.intellij.psi.util.CachedValuesManager
 import com.intellij.python.lsp.core.typeEngine.PyTypeEngineUtils
 import com.intellij.python.lsp.core.utils.PyLspToolVersionTracker
+import com.intellij.python.pyproject.model.evolution.getInterpreter
 import com.intellij.python.pytools.backend.PyTool
+import com.intellij.python.sdk.backend.PythonInterpreter
 import com.intellij.util.messages.Topic
 import com.jetbrains.python.packaging.management.PythonPackageManager
-import com.jetbrains.python.sdk.pythonSdk
+import com.jetbrains.python.project.PyProject
+import com.jetbrains.python.project.project
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import org.jetbrains.annotations.ApiStatus
 import org.jetbrains.annotations.VisibleForTesting
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 private val MODULE_CLIENTS_LOG: Logger = logger<PyLspToolDescriptor>()
@@ -105,7 +110,7 @@ fun pyLspModulesToServeWith(module: Module, pyTool: PyTool): List<Module> {
  * The answer never blocks and never reads an interpreter, because the type evaluation path asks for
  * it under a read lock. `TypeEvalContextImpl` builds a type engine in its constructor, and the
  * factory builds a context before it looks in its cache, so this runs for every `TypeEvalContext`.
- * Reading the installed packages here would call [PythonPackageManager.forSdk], which creates a
+ * Reading the installed packages here would call [PythonPackageManager.forPythonInterpreter], which creates a
  * manager and does first-touch I/O while the caller holds the read lock.
  *
  * A module the snapshot does not name yet states no version, see [pyLspServeKeyWithoutVersion], so
@@ -159,14 +164,15 @@ val PY_LSP_SERVE_KEYS_CHANGED: Topic<PyLspServeKeysListener> =
 /**
  * The last computed serve keys of each tool, with the stamp of the project state they rest on.
  *
- * The keys rest on the project roots and on the installed tool versions, so both trackers make the
- * stamp. Reading them is cheap; recomputing them is not, and it cannot happen under a read lock.
+ * The keys rest on the project roots, on the interpreters of the Python projects and on the
+ * installed tool versions, so all three make the stamp. Reading them is cheap; recomputing them is
+ * not, and it cannot happen under a read lock.
  */
 @Service(Service.Level.PROJECT)
 private class PyLspServeKeyCache(private val project: Project, private val cs: CoroutineScope) {
-  private data class Stamp(val roots: Long, val versions: Long) {
-    /** Whether the state behind this stamp is at least as new as the state behind [other]. Both counters only grow. */
-    fun isAtLeast(other: Stamp): Boolean = roots >= other.roots && versions >= other.versions
+  private data class Stamp(val roots: Long, val structure: Long, val versions: Long) {
+    /** Whether the state behind this stamp is at least as new as the state behind [other]. Every counter only grows. */
+    fun isAtLeast(other: Stamp): Boolean = roots >= other.roots && structure >= other.structure && versions >= other.versions
   }
 
   private class Snapshot(val stamp: Stamp?, val keys: Map<Module, PyLspServeKey>)
@@ -174,9 +180,19 @@ private class PyLspServeKeyCache(private val project: Project, private val cs: C
   private val perTool = ConcurrentHashMap<String, AtomicReference<Snapshot>>()
   /** The tools with a refresh in flight, so a hot read path does not queue one refresh per call. */
   private val refreshing: MutableSet<String> = ConcurrentHashMap.newKeySet()
+  /** Every tool that asked for its keys, so a new [EvoPyProjectModel] generation can refresh them. */
+  private val tools = ConcurrentHashMap<String, PyTool>()
+
+  /**
+   * The count of [EvoPyProjectModel] generations. The interpreter of each module comes from that
+   * model, and a new generation lands after the `rootsChanged` of the change. A refresh in between
+   * reads the old interpreters, so the roots counter alone would keep its wrong keys.
+   */
+  private val structureGeneration = AtomicLong()
 
   fun view(pyTool: PyTool): PyLspServeKeysView {
     val toolName = pyTool.packageName.name
+    tools.putIfAbsent(toolName, pyTool)
     val snapshot = snapshotRefOf(toolName).get()
     val fresh = snapshot.stamp == stampOf(toolName)
     if (!fresh && refreshing.add(toolName)) {
@@ -194,6 +210,7 @@ private class PyLspServeKeyCache(private val project: Project, private val cs: C
 
   suspend fun refreshedKeys(pyTool: PyTool): Map<Module, PyLspServeKey> {
     val toolName = pyTool.packageName.name
+    tools.putIfAbsent(toolName, pyTool)
     val ref = snapshotRefOf(toolName)
     val stamp = stampOf(toolName)
     ref.get().let { if (it.stamp?.isAtLeast(stamp) == true) return it.keys }
@@ -223,6 +240,16 @@ private class PyLspServeKeyCache(private val project: Project, private val cs: C
         dropModule(module)
       }
     })
+    // A new interpreter of a module reaches the keys only through a new generation, and nothing else
+    // asks for the keys then. A refresh that changes them tells the providers to group again.
+    cs.launch {
+      EvoPyProjectModel.getInstance(project).snapshotFlow().collect {
+        structureGeneration.incrementAndGet()
+        for (pyTool in tools.values) {
+          cs.launch { refreshedKeys(pyTool) }
+        }
+      }
+    }
   }
 
   /** Removes [module] from every snapshot. The snapshot then counts as stale, so the next read refreshes it. */
@@ -237,15 +264,16 @@ private class PyLspServeKeyCache(private val project: Project, private val cs: C
 
   private fun stampOf(toolName: String): Stamp = Stamp(
     ProjectRootModificationTracker.getInstance(project).modificationCount,
+    structureGeneration.get(),
     PyLspToolVersionTracker.getInstance(project).counterOf(toolName),
   )
 
   /**
    * The project model comes from a read action, and the installed version of each interpreter from
-   * outside it. [PythonPackageManager.forSdk] creates a manager on the first call for an
+   * outside it. [PythonPackageManager.forPythonInterpreter] creates a manager on the first call for an
    * interpreter, so it must not run under the read lock.
    *
-   * `forSdk` throws `AlreadyDisposedException` for an interpreter or a project that went away while
+   * `forPythonInterpreter` throws `AlreadyDisposedException` for an interpreter or a project that went away while
    * this ran. That exception is a cancellation, so it ends this refresh and the snapshot keeps its
    * last answer. The stamp does not move, so the next read schedules another refresh.
    */
@@ -253,10 +281,14 @@ private class PyLspServeKeyCache(private val project: Project, private val cs: C
     val model = readAction {
       pyLspServedModules(project)
         .filterNot { it.isDisposed }
-        .map { module -> Triple(module, pyLspWorkspaceRootOf(module), module.pythonSdk) }
+        .map { module -> module to pyLspWorkspaceRootOf(module) }
     }
-    return model.associate { (module, workspaceRoot, sdk) ->
-      module to PyLspServeKey(workspaceRoot, sdk?.let { pyLspToolVersionOf(it, project, pyTool) })
+    // One generation for every module, so all the keys of one refresh agree.
+    val interpreters = project.evoPyProjects().associate { it.pyProject.residesOnModule to it.interpreter }
+    return model.associate { (module, workspaceRoot) ->
+      val interpreter = interpreters[module]
+      val version = interpreter?.let { pyLspToolVersionOf(it, project, pyTool) }
+      module to PyLspServeKey(workspaceRoot, version, interpreter?.let { pyLspServeInterpreterOf(it, pyTool) })
     }
   }
 }
@@ -264,25 +296,40 @@ private class PyLspServeKeyCache(private val project: Project, private val cs: C
 /**
  * What decides which server a module belongs to.
  *
- * Two modules share a server only when they share a workspace and run the same binary.
+ * Two modules share a server only when they share a workspace and run the same binary. For a tool that
+ * sets [PyLspTool.serverNeedsOneInterpreter], they must also share the [interpreter]. Every other tool
+ * leaves [interpreter] `null`, so the interpreter does not split its modules.
  */
 @ApiStatus.Internal
-data class PyLspServeKey(val workspaceRoot: String?, val toolVersion: String?)
+data class PyLspServeKey(val workspaceRoot: String?, val toolVersion: String?, val interpreter: String? = null)
 
 /**
- * The [PyLspServeKey] of [module] for [pyTool]. Reads the interpreter, so never call it under a read
- * lock. [pyLspServeKeys] answers the same question from a snapshot for a caller that holds one.
+ * The [PyLspServeKey.interpreter] of [interpreter] for [pyTool], or `null` when [pyTool] does not group
+ * its modules by interpreter.
+ */
+private fun pyLspServeInterpreterOf(interpreter: PythonInterpreter, pyTool: PyTool): String? =
+  if ((pyTool as? PyLspTool<*>)?.serverNeedsOneInterpreter == true) interpreter.pythonBinaryPath?.toString() else null
+
+/**
+ * The [PyLspServeKey] of [pyProject] for [pyTool], with the interpreter from the current snapshot.
+ *
+ * [pyLspServeKeys] answers the same question for every served module at once.
  */
 @ApiStatus.Internal
-fun pyLspServeKeyOf(module: Module, pyTool: PyTool): PyLspServeKey =
-  PyLspServeKey(pyLspWorkspaceRootOf(module), pyLspToolVersionOf(module, pyTool))
+suspend fun pyLspServeKeyOf(pyProject: PyProject, pyTool: PyTool): PyLspServeKey {
+  val workspaceRoot = readAction { pyLspWorkspaceRootOf(pyProject.residesOnModule) }
+  val interpreter = pyProject.getInterpreter()
+  val version = interpreter?.let { pyLspToolVersionOf(it, pyProject.project, pyTool) }
+  return PyLspServeKey(workspaceRoot, version, interpreter?.let { pyLspServeInterpreterOf(it, pyTool) })
+}
 
 /**
  * The [PyLspServeKey] of a module the serve-key snapshot does not name yet.
  *
- * It states the workspace, which the project model alone decides, and no version. A module without a
- * version joins the version of its own workspace, see [pyLspServeGroupOf], so an unknown module
- * lands with the rest of its workspace instead of getting a server of its own.
+ * It states the workspace, which the project model alone decides, and no version and no interpreter.
+ * A module without a version joins the version of its own workspace, and a module without an
+ * interpreter joins its interpreter, see [pyLspServeGroupOf]. So an unknown module lands with the rest
+ * of its workspace instead of getting a server of its own.
  */
 @ApiStatus.Internal
 fun pyLspServeKeyWithoutVersion(module: Module): PyLspServeKey = PyLspServeKey(pyLspWorkspaceRootOf(module), null)
@@ -316,9 +363,11 @@ fun pyLspExecutableCandidates(live: List<Module>, view: PyLspServeKeysView): Lis
  * The rule alone, so a test can state it without a project on disk and without an environment. Every
  * module of [served] lands in exactly one group, and the group keeps the order of [served].
  *
- * The workspace decides first. A module without its own copy of the tool states no version, so it
- * takes the version of the first module of **its own** workspace that states one. A global fallback
- * would give a module of an attached project the version of the main project.
+ * The workspace decides first, then the [PyLspServeKey.interpreter], then the version. A module without
+ * its own copy of the tool states no version, so it takes the version of the first module of **its
+ * own** group that states one. A global fallback would give a module of an attached project the
+ * version of the main project. A module whose interpreter is not known yet takes the interpreter of the
+ * first module of its workspace in the same way.
  */
 @VisibleForTesting
 @ApiStatus.Internal
@@ -328,10 +377,18 @@ fun pyLspServeGroupOf(module: Module, served: List<Module>, keyOf: (Module) -> P
   val keys = served.associateWith(keyOf)
   val mine = keys.getValue(module)
   val sameWorkspace = served.filter { keys.getValue(it).workspaceRoot == mine.workspaceRoot }
-  // The version a module without its own copy of the tool runs.
-  val fallback = sameWorkspace.firstNotNullOfOrNull { keys.getValue(it).toolVersion }
-  val wanted = mine.toolVersion ?: fallback
-  return sameWorkspace.filter { (keys.getValue(it).toolVersion ?: fallback) == wanted }
+  val sameInterpreter = sameWorkspace.withFallback(module) { keys.getValue(it).interpreter }
+  return sameInterpreter.withFallback(module) { keys.getValue(it).toolVersion }
+}
+
+/**
+ * The modules of [this] whose [value] equals the one of [module]. A module without a value takes the
+ * value of the first module that has one, so every module lands in exactly one group.
+ */
+private fun List<Module>.withFallback(module: Module, value: (Module) -> String?): List<Module> {
+  val fallback = firstNotNullOfOrNull(value)
+  val wanted = value(module) ?: fallback
+  return filter { (value(it) ?: fallback) == wanted }
 }
 
 /**
@@ -365,22 +422,15 @@ private fun sharesTreeWith(one: String, other: String): Boolean =
   FileUtil.isAncestor(one, other, false) || FileUtil.isAncestor(other, one, false)
 
 /**
- * The version of [pyTool] installed in [module]'s environment, or `null` when it holds none.
+ * The version of [pyTool] installed in the environment of [interpreter], or `null` when it holds none.
  *
  * The snapshot needs no process and does not block. It reads an empty list until the package cache
- * of the environment is seeded, so every module states no version at first. `LspPackageListener`
+ * of the environment is seeded, so every interpreter states no version at first. `LspPackageListener`
  * restarts the clients once that changes.
  */
 @ApiStatus.Internal
-fun pyLspToolVersionOf(module: Module, pyTool: PyTool): String? {
-  val sdk = module.pythonSdk ?: return null
-  return pyLspToolVersionOf(sdk, module.project, pyTool)
-}
-
-/** [pyLspToolVersionOf] for an interpreter that no module has to own. */
-@ApiStatus.Internal
-fun pyLspToolVersionOf(sdk: Sdk, project: Project, pyTool: PyTool): String? =
-  PythonPackageManager.forSdk(project, sdk).getInstalledToolPackage(pyTool)?.version
+fun pyLspToolVersionOf(interpreter: PythonInterpreter, project: Project, pyTool: PyTool): String? =
+  PythonPackageManager.forPythonInterpreter(project, interpreter).getInstalledToolPackage(pyTool)?.version
 
 /**
  * The content roots of [modules], with no duplicate, ordered by path.
@@ -461,10 +511,17 @@ fun pyLspFolderSetIsStale(
  * Such a server answers for nobody. It holds folders the project dropped, and its descriptor keeps a
  * strong reference to every module it was built with, so a disposed module stays reachable while the
  * server runs. The caller stops it.
+ *
+ * A server of one live module that [served] leaves out is not such a server. [pyLspModulesToServeWith]
+ * gives that module a server of its own, for example for a module without a local interpreter. A stop
+ * would start the same server again, and the group check on its start would stop it again.
  */
 @ApiStatus.Internal
-fun pyLspServesNothing(descriptor: PyLspToolDescriptor, served: List<Module>): Boolean =
-  descriptor.servedModules.none { it in served }
+fun pyLspServesNothing(descriptor: PyLspToolDescriptor, served: List<Module>): Boolean {
+  if (descriptor.servedModules.any { it in served }) return false
+  val alone = descriptor.servedModules.singleOrNull() ?: return true
+  return alone.isDisposed
+}
 
 /** The modules the server behind [this] answers for. Empty when the client is not a Python LSP tool. */
 @get:ApiStatus.Internal

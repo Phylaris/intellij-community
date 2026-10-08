@@ -59,6 +59,7 @@ import com.intellij.platform.projectView.pane.BackendProjectViewPaneStateAccesso
 import com.intellij.platform.projectView.pane.PROJECT_VIEW_SELECTED_NODE_IDS_KEY
 import com.intellij.platform.projectView.pane.ProjectViewNodeModelImpl
 import com.intellij.platform.projectView.pane.ProjectViewNodePath
+import com.intellij.platform.projectView.pane.ProjectViewNodeUserObject
 import com.intellij.platform.projectView.pane.ProjectViewPaneCutCopyPasteDeleteHandler
 import com.intellij.platform.projectView.pane.ProjectViewPaneDescriptor
 import com.intellij.platform.projectView.pane.ProjectViewPaneDescriptorBuilder
@@ -75,6 +76,7 @@ import com.intellij.platform.projectView.pane.SelectByEditor
 import com.intellij.platform.projectView.pane.SelectInRequest
 import com.intellij.platform.projectView.pane.SuspendingBackendProjectViewPaneStateAccessor
 import com.intellij.platform.projectView.pane.buildProjectViewNodeModel
+import com.intellij.platform.projectView.runSafelyCancellable
 import com.intellij.platform.projectView.settings.ProjectViewPaneFileNestingValue
 import com.intellij.platform.projectView.settings.ProjectViewPaneOption
 import com.intellij.platform.projectView.settings.ProjectViewPaneSettingsAccessor
@@ -125,13 +127,13 @@ import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.concurrent.atomics.incrementAndFetch
 
 @ApiStatus.Experimental
-interface ProjectViewTreeNodeProvider<T> {
+interface ProjectViewTreeNodeProvider<T : ProjectViewNodeUserObject> {
   suspend fun getChildren(parent: T?): List<T>?
   suspend fun getNodeModelFlow(id: Long, node: T): Flow<BackendProjectViewNodeModel<T>>
 }
 
 @ApiStatus.Experimental
-abstract class TreeBasedProjectViewPaneModel<T : Any>(override val project: Project) : ProjectViewPaneModel {
+abstract class TreeBasedProjectViewPaneModel<T : ProjectViewNodeUserObject>(override val project: Project) : ProjectViewPaneModel {
   private val currentTreeState = AtomicReference<ProjectViewPaneTreeState?>(null)
 
   override val cutCopyPasteDeleteHandler: ProjectViewPaneCutCopyPasteDeleteHandler = MyCutCopyPasteDeleteHandler()
@@ -263,7 +265,7 @@ abstract class TreeBasedProjectViewPaneModel<T : Any>(override val project: Proj
   }
 
   override suspend fun setFileNesting(fileNestingValue: ProjectViewPaneFileNestingValue) {
-    ProjectViewFileNestingService.getInstance().setRules(fileNestingValue.nestingRules)
+    currentTreeState.load()?.scheduleSetFileNesting(fileNestingValue)
   }
 
   suspend fun visitTree(allowLoading: Boolean, visitNode: suspend (BackendProjectViewNodeModel<T>) -> TreeVisitor.Action): BackendProjectViewNodeModel<T>? {
@@ -489,48 +491,59 @@ abstract class TreeBasedProjectViewPaneModel<T : Any>(override val project: Proj
           initialize()
           onStateChanged(suspendingState)
           launch(CoroutineName("Collect updates for the PV pane $id")) {
-            createUpdater().continuouslyUpdatePane(this@TreeBasedProjectViewPaneModel, progressReporter)
+            runSafelyCancellable(LOG, taskDescription = { "updater for the pane $id" }) {
+              createUpdater().continuouslyUpdatePane(this@TreeBasedProjectViewPaneModel, progressReporter)
+            }
           }
           launch(CoroutineName("Flush updates for the PV pane $id")) {
-            pendingUpdatesSignal.throttle(timeMs = 50).collect {
-              scheduleProcessPendingUpdates()
+            runSafelyCancellable(LOG, taskDescription = { "processing pending updates for the pane $id" }) {
+              pendingUpdatesSignal.throttle(timeMs = 50).collect {
+                scheduleProcessPendingUpdates()
+              }
             }
           }
           launch(CoroutineName("Update requests for the PV pane $id")) {
-            for (request in stateUpdateRequests) {
-              LOG.trace { "Processing update request $request" }
-              when (request) {
-                is LoadChildrenRequest -> {
-                  updateChildren(request.parentId, allowLoading = true, deep = false)
-                }
-                is ProcessPendingUpdatesRequest -> {
-                  processPendingUpdates()
-                }
-                is UpdateNodeModelRequest<*> -> {
-                  builder.updateNode(request.model)
-                }
-                is UpdateSettingsRequest -> {
-                  applySettings()
-                }
-                is SetOptionRequest -> {
-                  applyOptionChange(request.option, request.newValue)
-                }
-                is SetSortKeyRequest -> {
-                  applySortKeyChange(request.sortKey)
-                }
-                is SelectNodeRequest -> {
-                  builder.selectNode(request.nodePath) { options -> 
-                    options.requestFocus = request.requestFocus
+            runSafelyCancellable(LOG, taskDescription = { "processing update requests for the PV pane $id" }) {
+              for (request in stateUpdateRequests) {
+                LOG.trace { "Processing update request $request" }
+                when (request) {
+                  is LoadChildrenRequest -> {
+                    updateChildren(request.parentId, allowLoading = true, deep = false)
+                  }
+                  is ProcessPendingUpdatesRequest -> {
+                    processPendingUpdates()
+                  }
+                  is UpdateNodeModelRequest<*> -> {
+                    builder.updateNode(request.model)
+                  }
+                  is UpdateSettingsRequest -> {
+                    applySettings()
+                  }
+                  is SetOptionRequest -> {
+                    applyOptionChange(request.option, request.newValue)
+                  }
+                  is SetSortKeyRequest -> {
+                    applySortKeyChange(request.sortKey)
+                  }
+                  is SetFileNestingRequest -> {
+                    applyFileNestingChange(request.fileNesting)
+                  }
+                  is SelectNodeRequest -> {
+                    builder.selectNode(request.nodePath) { options -> 
+                      options.requestFocus = request.requestFocus
+                    }
                   }
                 }
+                appliedUpdateEpoch.value = request.epoch
+                onStateChanged(suspendingState)
               }
-              appliedUpdateEpoch.value = request.epoch
-              onStateChanged(suspendingState)
             }
           }
           launch(CoroutineName("Select requests for the PV pane $id")) {
-            selectRequests.consumeAsFlow().collectLatest { element ->
-              selectElementImpl(element)
+            runSafelyCancellable(LOG, taskDescription = { "executing select requests for the pane $id" }) {
+              selectRequests.consumeAsFlow().collectLatest { element ->
+                selectElementImpl(element)
+              }
             }
           }
         }
@@ -583,6 +596,10 @@ abstract class TreeBasedProjectViewPaneModel<T : Any>(override val project: Proj
 
     fun scheduleSetSortKey(sortKey: ProjectViewPaneSortKey) {
       schedule { SetSortKeyRequest(it, sortKey) }
+    }
+
+    fun scheduleSetFileNesting(fileNesting: ProjectViewPaneFileNestingValue) {
+      schedule { SetFileNestingRequest(it, fileNesting) }
     }
 
     fun scheduleSelectElement(element: PsiElement) {
@@ -874,6 +891,13 @@ abstract class TreeBasedProjectViewPaneModel<T : Any>(override val project: Proj
       // then rebuild the tree with the new comparator.
       applySettings()
       updateAll(withComparator = true)
+    }
+
+    private suspend fun applyFileNestingChange(fileNesting: ProjectViewPaneFileNestingValue) {
+      val settingsService = ProjectViewPaneSettingsService.getInstance(project)
+      settingsService.setFileNesting(fileNesting)
+      applySettings()
+      updateAll(withComparator = false)
     }
 
     private fun updateAll(withComparator: Boolean) {
@@ -1169,8 +1193,9 @@ private data class ProcessPendingUpdatesRequest(override val epoch: Long) : Stat
 private data class UpdateSettingsRequest(override val epoch: Long) : StateUpdateRequest()
 private data class SetOptionRequest(override val epoch: Long, val option: ProjectViewPaneOption, val newValue: Boolean) : StateUpdateRequest()
 private data class SetSortKeyRequest(override val epoch: Long, val sortKey: ProjectViewPaneSortKey) : StateUpdateRequest()
+private data class SetFileNestingRequest(override val epoch: Long, val fileNesting: ProjectViewPaneFileNestingValue) : StateUpdateRequest()
 private data class SelectNodeRequest(override val epoch: Long, val nodePath: ProjectViewNodePath, val requestFocus: Boolean) : StateUpdateRequest()
-private data class UpdateNodeModelRequest<T>(override val epoch: Long, val id: Long, val model: BackendProjectViewNodeModel<T>) : StateUpdateRequest()
+private data class UpdateNodeModelRequest<T : ProjectViewNodeUserObject>(override val epoch: Long, val id: Long, val model: BackendProjectViewNodeModel<T>) : StateUpdateRequest()
 
 private val LOG = logger<TreeBasedProjectViewPaneModel<*>>()
 

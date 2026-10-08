@@ -10,7 +10,6 @@ import com.intellij.platform.recentFiles.shared.FileSwitcherApi
 import com.intellij.platform.recentFiles.shared.RecentFileKind
 import com.intellij.platform.recentFiles.shared.RecentFilesCoroutineScopeProvider
 import com.intellij.platform.rpc.lite.LiteRemoteApiProviderService
-import com.intellij.platform.runtime.product.ProductMode
 import com.intellij.platform.util.coroutines.childScope
 import fleet.rpc.client.durable
 import fleet.rpc.remoteApiDescriptor
@@ -40,12 +39,11 @@ internal class RecentFileModelSynchronizer : ProjectActivity {
    * lives on the backend.
    */
   private suspend fun synchronizeWithTheLocalModelOfALightSession(frontendRecentFilesModel: FrontendRecentFilesModel, project: Project) {
-    // Strictly LIGHT, not isLight: LIGHT_WITH_RD_CONNECTION already awaits its backend. See awaitWithLocalFallback.
-    if (IdeProductMode.getInstance().currentMode != ProductMode.LIGHT) return
+    // isLightWithoutRemoteApi, not isLight: LIGHT_WITH_RD_CONNECTION already awaits its backend. See awaitWithLocalFallback.
+    if (!IdeProductMode.getInstance().currentMode.isLightWithoutRemoteApi) return
 
     // TODO IJPL-252054 watch the product mode of the applied plugin set instead of the connection, once the platform
-    //  publishes that mode as a flow. `PluginManagerCore.currentInitContextFlow` on the branch
-    //  `khbminus/light-2/monolith-product-mode` is that flow, and it also covers a mode change of any other origin.
+    //  publishes that mode as a flow.
     coroutineScope {
       val subscriptions = launch { synchronizeWithTheModel(frontendRecentFilesModel, project) }
       LiteRemoteApiProviderService.awaitConnectionAndResolve(remoteApiDescriptor<FileSwitcherApi>())

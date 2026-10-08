@@ -2,7 +2,6 @@
     "version": 2,
     "plugin": "intellij.rider.plugins.dotTrace.dotMemory",
     "variant": "{platform}",
-    "layoutSignature": "{platform:layoutSignature}",
     "assets": [
         {
             "module": "intellij.rider.plugins.dotTrace.dotMemory.core"
@@ -44,24 +43,12 @@
             }
         },
         {
-            "destination": "",
+            "destination": "DotFiles",
             "inputs": [
                 "layout-assets:platform-resource-generator:0:output"
             ],
             "kind": "tree",
             "classPath": false
-        }
-    ],
-    "preparations": [
-        {
-            "id": "layout-assets:platform-resource-generator:0",
-            "inputs": [
-                "{platform:inputs}"
-            ],
-            "outputs": [
-                "layout-assets:platform-resource-generator:0:output"
-            ],
-            "modelSignature": "{platform:modelSignature}"
         }
     ],
     "operations": [
@@ -77,6 +64,7 @@
             "manifest": "keep",
             "layoutAssets": {
                 "format": "tree",
+                "root": "DotFiles",
                 "assets": [
                     {
                         "destination": "",

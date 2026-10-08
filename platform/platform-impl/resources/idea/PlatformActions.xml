@@ -503,17 +503,6 @@
           </group>
         </group>
         <separator/>
-        <group id="Macros" popup="true">
-          <group id="StandardMacroActions">
-            <reference ref="PlaybackLastMacro"/>
-            <reference ref="StartStopMacroRecording"/>
-            <reference ref="EditMacros"/>
-            <reference ref="PlaySavedMacrosAction"/>
-          </group>
-          <separator/>
-          <reference ref="MacrosGroup"/>
-        </group>
-        <separator/>
         <reference ref="EmojiAndSymbols"/>
       </group>
 
@@ -533,9 +522,8 @@
 
           <reference ref="SwitchIdeScaleAction"/>
 
+          <separator/>
           <group id="UIToggleActions">
-            <separator/>
-            <reference ref="TogglePresentationAssistantAction"/>
             <separator/>
             <reference ref="ViewMainMenu"/>
             <reference ref="ChangeMainMenuModeActionGroup"/>
@@ -764,7 +752,6 @@
         <group id="HelpDiagnosticTools" popup="true">
           <reference ref="Performance.ActivityMonitor"/>
           <reference ref="Performance.DumpThreads"/>
-          <reference ref="Performance.MemTester"/>
           <separator/>
           <reference ref="LogDebugConfigure"/>
           <reference ref="BrowseSpecialPaths"/>
@@ -898,7 +885,6 @@
     </group>
 
     <group id="EditorTabPopupMenu">
-      <reference ref="MoveToolWindowTabFromEditorToToolWindowAction"/>
       <separator/>
       <reference ref="CloseEditorsGroup"/>
       <separator/>
@@ -1070,10 +1056,7 @@
       <reference ref="ChangeIdeScale"/>
     </group>
 
-    <group id="MaintenanceGroup">
-      <reference ref="ShowRegistry"/>
-      <reference ref="ShowExperiments"/>
-    </group>
+    <group id="MaintenanceGroup"/>
 
     <reference ref="Console.Open"/>
     <reference ref="Console.Execute"/>
@@ -1244,13 +1227,6 @@
       <add-to-group group-id="Other.KeymapGroup"/>
     </group>
 
-    <group id="Internal.HeapAnalysis" popup="true" internal="true">
-      <reference ref="UserInvokedFullAnalysis"/>
-      <reference ref="SilentHeapDumpSnapshot"/>
-      <reference ref="AnalyzeHeapDumpSnapshot"/>
-      <add-to-group group-id="Internal"/>
-    </group>
-
     <reference ref="TriggerLowMemoryNotification"/>
 
     <reference ref="NextWindow"/>
@@ -1345,8 +1321,6 @@
     </group>
 
     <reference ref="ChangeProjectColorActionGroup"/>
-
-    <reference ref="PresentationAssistantQuickSettingsGroup"/>
 
     <group id="ToolbarPopupActions"/>
 

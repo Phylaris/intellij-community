@@ -5,6 +5,7 @@ import com.intellij.python.community.common.tools.ToolId
 import com.intellij.python.pyproject.PY_PROJECT_TOML
 import com.intellij.python.pytools.backend.PyTool
 import com.intellij.python.sdk.backend.PySdkBundle
+import com.intellij.python.sdk.backend.PythonInterpreter
 import com.intellij.python.sdk.backend.evolution.DiscoveredVenv
 import com.intellij.python.sdk.backend.evolution.EvoPyProject
 import com.intellij.python.sdk.backend.evolution.EvoRecreateSpec
@@ -36,6 +37,7 @@ import com.jetbrains.python.sdk.add.v2.PathHolder
 import com.jetbrains.python.sdk.evolution.requiresPython
 import com.jetbrains.python.sdk.flavors.PythonSdkFlavor
 import com.jetbrains.python.sdk.uv.UvSdkFlavor
+import com.jetbrains.python.sdk.uv.detectUvMode
 import com.jetbrains.python.sdk.uv.setupExistingEnvAndSdk
 import com.jetbrains.python.sdk.uv.setupNewUvSdkAndEnv
 import com.jetbrains.python.venvReader.VirtualEnvReader
@@ -81,17 +83,19 @@ internal class UvEvoEnvironmentProvider : PyToolEvoEnvironmentProvider() {
   }
 
   /**
-   * Adopts an existing virtualenv as a uv env — `usePip = false`, so the SDK is wired to uv rather than to pip even
-   * though the env itself is an ordinary virtualenv either tool could claim.
+   * Adopts an existing virtualenv as a uv env. The mode follows the directory: a `pyproject.toml` makes it a project,
+   * anything else a pip-mode environment.
    */
-  override suspend fun createSdkForExistingEnv(context: EvoToolContext, homePath: Path): PyResult<Sdk> {
+  override suspend fun createSdkForExistingEnv(context: EvoToolContext, homePath: Path): PyResult<PythonInterpreter> {
     val uvPath = executableOrNull(context.fileSystem) ?: return toolMissing()
+    val baseDir = context.workspace.baseDir
     return setupExistingEnvAndSdk(
+      moduleOrProject = context.workspace.moduleOrProject,
       pythonBinary = PathHolder.Eel(homePath),
       uvPath = uvPath,
-      workingDir = context.workspace.baseDir,
+      workingDir = baseDir,
       fileSystem = context.fileSystem,
-      usePip = false,
+      mode = detectUvMode(baseDir),
     )
   }
 
@@ -99,18 +103,21 @@ internal class UvEvoEnvironmentProvider : PyToolEvoEnvironmentProvider() {
    * Creates a new uv env in the folder the add-new row named; `token` is the chosen Python version as `major.minor`
    * ("" = uv's default), which is all `uv venv --python` is given — see [supportedPythonVersions].
    */
-  override suspend fun createSdkForNewEnv(context: EvoToolContext, ref: PyInterpreterRef.CreateEnv): PyResult<Sdk> {
+  override suspend fun createSdkForNewEnv(context: EvoToolContext, ref: PyInterpreterRef.CreateEnv): PyResult<PythonInterpreter> {
     val uvExecutable = executableOrNull(context.fileSystem) ?: return toolMissing()
     val venvDir = context.resolveNewVenvDir(ref)
     if (venvDir.exists()) return envExistsError(venvDir.fileName.toString())
     val version = parseVersion(ref.token).getOr { return it }
+    val baseDir = context.workspace.baseDir
     return setupNewUvSdkAndEnv(
+      moduleOrProject = context.workspace.moduleOrProject,
       uvExecutable = uvExecutable,
-      workingDir = context.workspace.baseDir,
+      workingDir = baseDir,
       venvPath = PathHolder.Eel(venvDir),
       fileSystem = context.fileSystem,
       version = version,
       errorSink = context.errorSink,
+      mode = detectUvMode(baseDir),
     )
   }
 
@@ -150,16 +157,19 @@ internal class UvEvoEnvironmentProvider : PyToolEvoEnvironmentProvider() {
    * create. That suits the rule the widget works to: a failure leaves the folder standing and broken, and says so,
    * instead of leaving the project with nothing where an environment used to be.
    */
-  override suspend fun recreateEnv(context: EvoToolContext, homePath: Path, spec: EvoRecreateSpec): PyResult<Sdk> {
+  override suspend fun recreateEnv(context: EvoToolContext, homePath: Path, spec: EvoRecreateSpec): PyResult<PythonInterpreter> {
     val uvExecutable = executableOrNull(context.fileSystem) ?: return toolMissing()
     val version = parseVersion(spec.baseToken).getOr { return it }
+    val baseDir = context.workspace.baseDir
     return setupNewUvSdkAndEnv(
+      moduleOrProject = context.workspace.moduleOrProject,
       uvExecutable = uvExecutable,
-      workingDir = context.workspace.baseDir,
+      workingDir = baseDir,
       venvPath = PathHolder.Eel(VirtualEnvReader().resolvePythonHomeFromPythonBinary(homePath)),
       fileSystem = context.fileSystem,
       version = version,
       errorSink = context.errorSink,
+      mode = detectUvMode(baseDir),
       overrideExistingEnv = true,
       sync = spec.syncPackages,
     )

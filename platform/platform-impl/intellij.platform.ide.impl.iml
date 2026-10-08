@@ -36,6 +36,11 @@
     <orderEntry type="module" module-name="intellij.platform.credentialStore" />
     <orderEntry type="module" module-name="intellij.platform.editor.ui" />
     <orderEntry type="module" module-name="intellij.platform.ide" exported="" />
+    <orderEntry type="module" module-name="intellij.platform.undo" exported="" />
+    <orderEntry type="module" module-name="intellij.platform.ui.tree" exported="" />
+    <orderEntry type="module" module-name="intellij.platform.vfs.impl" exported="" />
+    <orderEntry type="module" module-name="intellij.platform.ide.json" exported="" />
+    <orderEntry type="module" module-name="intellij.platform.ide.dnd" exported="" />
     <orderEntry type="module" module-name="intellij.platform.icons" />
     <orderEntry type="module" module-name="intellij.platform.welcomeScreen" />
     <orderEntry type="module" module-name="intellij.platform.welcomeScreen.impl" />
@@ -165,7 +170,6 @@
     <orderEntry type="module" module-name="intellij.platform.eel.impl" />
     <orderEntry type="module" module-name="intellij.platform.ide.recentProjects" />
     <orderEntry type="module" module-name="intellij.platform.runtime.product" />
-    <orderEntry type="module" module-name="intellij.platform.execution" />
     <orderEntry type="module" module-name="intellij.libraries.rd.core" />
     <orderEntry type="module" module-name="intellij.java.guiForms.rt" />
     <orderEntry type="module" module-name="fleet.rhizomedb" />

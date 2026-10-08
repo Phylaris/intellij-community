@@ -67,7 +67,7 @@ targets:
 # Unified Plugin Manager UI
 
 Status: Active
-Date: 2026-09-28
+Date: 2026-09-29
 
 ## Purpose
 
@@ -204,6 +204,12 @@ Untested: Product welcome buttons on a remote backend keep the Settings route be
 
 ## Search and Navigation
 
+- Settings search must find the Plugins page by an installed plugin's name or description.
+- Action search must omit the Plugins page options for plugin names and descriptions.
+  [@test] ../../testSrc/com/intellij/ide/ui/search/PluginSearchableOptionContributorTest.kt (
+    `Settings search finds Plugins by installed plugin name and description`
+  )
+
 - An empty query must make local, Suggested, Internal, and custom repository sources eligible.
 - A general nonempty query must replace Suggested with Marketplace.
 - An Installed navigation request must search local plugins without starting other source searches.
@@ -238,6 +244,7 @@ Untested: Product welcome buttons on a remote backend keep the Settings route be
   )
 
 - The filter control must offer Tag, Vendor, Category, Repository, and installed-status filters.
+- Vendor must appear beside Tag, before the Installed separator.
 - Repository choices must appear only when repository values exist.
 - Tag, Vendor, Category, and Repository filters must allow multiple selections.
 - Installed-status filters must allow one optional selection.
@@ -265,6 +272,34 @@ Untested: Product welcome buttons on a remote backend keep the Settings route be
   [@test] ../../testSrc/com/intellij/ide/plugins/unified/UnifiedPluginMarketplaceDataProviderTest.kt (
     `Marketplace tags keep all values in count order`;
     `Marketplace tags use name order for equal counts`
+  )
+
+- Vendor choices must contain all Marketplace vendors and retain vendors from other available sources.
+- Installed and Bundled vendors must come first. Each vendor group must use name order without case sensitivity.
+- Local and selected vendor choices must remain available while the Marketplace catalog loads or fails.
+  [@test] ../../testSrc/com/intellij/ide/plugins/unified/UnifiedPluginsPageSourceCoordinatorTest.kt (
+    `vendor options put local vendors before all Marketplace vendors`;
+    `local vendor options remain available without a Marketplace catalog`
+  )
+  [@test] ../../testSrc/com/intellij/ide/plugins/unified/UnifiedPluginsSearchActionsTest.kt (
+    `local vendor actions remain enabled while the catalog loads`
+  )
+
+- The Filter popup must stay responsive with thousands of vendor choices.
+- The time to open Filter must not grow with the number of vendor choices.
+  [@test] ../../testSrc/com/intellij/ide/plugins/unified/UnifiedPluginsSearchActionsTest.kt (
+    `large vendor catalogs update without EDT access`;
+    `opening Filter does not read choices from closed submenus`
+  )
+
+- An empty facet submenu must keep a visible, disabled loading or empty-list placeholder.
+  [@test] ../../testSrc/com/intellij/ide/plugins/unified/UnifiedPluginsSearchActionsTest.kt (
+    `empty facet submenus keep visible disabled placeholders`
+  )
+
+- A selected vendor with spaces and a hyphen must remain one Marketplace organization constraint, without a text constraint.
+  [@test] ../../testSrc/com/intellij/ide/plugins/unified/UnifiedPluginMarketplaceDataProviderTest.kt (
+    `Marketplace preserves a selected vendor with spaces and a hyphen`
   )
 
 - A long Repository choice must expose its full value in its accessible description and popup tooltip.
@@ -533,6 +568,11 @@ Untested: Community tests verify the Enter handler, but they do not verify the S
     `installing publication preserves empty selection across later source updates`
   )
 
+- A source refresh must update the selected plugin's details without requiring reselection.
+  [@test] ../../testSrc/com/intellij/ide/plugins/unified/LegacyPluginRowFactoryTest.kt (
+    `selected details receive an update after repository refresh`
+  )
+
 - The details panel closes without an error while a request runs.
   [@test] ../../testSrc/com/intellij/ide/plugins/newui/PluginDetailsPageComponentTest.kt (
     `the detached details panel ignores an update source result`
@@ -547,6 +587,13 @@ Untested: Community tests verify the Enter handler, but they do not verify the S
 - Keyboard navigation must reveal the focused row below the sticky header.
   [@test] ../../testSrc/com/intellij/ide/plugins/unified/UnifiedPluginsPageRealRowsTest.kt (
     `keyboard navigation reveals a row below the sticky header`
+  )
+
+- When a source refresh replaces a visible selected row, the row must remain visible below the sticky header.
+- A source refresh must not scroll to a selected row outside the viewport.
+  [@test] ../../testSrc/com/intellij/ide/plugins/unified/UnifiedPluginsPageRealRowsTest.kt (
+    `source refresh reveals a replaced selected row below the sticky header`;
+    `source refresh does not reveal a replaced offscreen selected row`
   )
 
 - Shift-selection may cross section headers but must skip plugins from the other selection group.
@@ -678,14 +725,14 @@ Untested: No focused test verifies Shift-selection across sections.
 Untested: No focused test verifies that Internal ignores the legacy Show All query.
 
 - Bundled must use Other for a missing category.
-- Default Relevance must sort category names with case sensitivity and put Other last.
+- Default Relevance must sort category names with case sensitivity, then put Other, then Libraries.
 - A disabled Bundled category must keep its position under Default Relevance.
 - Default Relevance must sort plugin names within each category.
   [@test] ../../testSrc/com/intellij/ide/plugins/unified/UnifiedPluginLocalDataProviderTest.kt (
     `local snapshot assigns bundled categories and normalizes a missing category`
   )
   [@test] ../../testSrc/com/intellij/ide/plugins/unified/UnifiedPluginsPageSourceCoordinatorTest.kt (
-    `bundled relevance sorts exact categories and names with Other last`;
+    `bundled relevance sorts exact categories and names with Other and Libraries last`;
     `disabled Bundled categories keep category order and priority`
   )
 
@@ -798,6 +845,16 @@ Untested: No focused test verifies that Internal ignores the legacy Show All que
   [@test] ../../testSrc/com/intellij/ide/plugins/unified/UnifiedPluginMarketplaceSourceCoordinatorTest.kt (
     `popular tags load independently from Marketplace content`;
     `popular tag failure keeps Marketplace content ready`
+  )
+
+- Marketplace vendor loading and failure must not delay or fail plugin content or tag loading.
+- The page must load the vendor catalog once, including when Marketplace content is inactive.
+- Closing the page must cancel vendor loading and prevent later publication.
+  [@test] ../../testSrc/com/intellij/ide/plugins/unified/UnifiedPluginMarketplaceSourceCoordinatorTest.kt (
+    `Marketplace vendors load independently from content and tags`;
+    `Marketplace vendors load once for inactive queries without enrichment readiness`;
+    `Marketplace vendor failure keeps content ready`;
+    `disposal cancels Marketplace vendor loading without publication`
   )
 
 - A custom repository retry must reload only that repository.

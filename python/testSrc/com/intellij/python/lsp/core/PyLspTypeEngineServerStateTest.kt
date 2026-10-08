@@ -3,7 +3,7 @@ package com.intellij.python.lsp.core
 
 import com.intellij.idea.TestFor
 import com.intellij.platform.lsp.api.LspServerListener
-import com.intellij.python.junit5Tests.framework.pyModuleFixture
+import com.intellij.python.junit5Tests.framework.pyProjectFixture
 import com.intellij.python.lsp.core.typeEngine.PyTypeEngineProjectSettings
 import com.intellij.python.lsp.core.typeEngine.PyTypeEngineSettingsState
 import com.intellij.python.lsp.core.typeEngine.PyTypeEngineType
@@ -19,15 +19,15 @@ import org.junit.jupiter.api.Test
 
 /**
  * A type context picks its engine when it is created, and the context cache keeps it until the PSI
- * changes. A context created while the engine's server did not run has no engine. The start and the
- * stop of that server must drop the cached contexts, or the file keeps PyCharm's own inference until
- * the next edit.
+ * changes. The engine of the selected tool answers `Unknown` while its server does not run. The start
+ * and the stop of that server must drop the cached contexts, or the file keeps the `Unknown` types
+ * until the next edit.
  */
 @TestApplication
 @TestFor(issues = ["PY-92008"])
 internal class PyLspTypeEngineServerStateTest {
   private val projectFixture = projectFixture(openAfterCreation = true)
-  private val moduleFixture = projectFixture.pyModuleFixture("main")
+  private val pyProjectFixture = projectFixture.pyProjectFixture()
 
   @Test
   fun `the start of the server of the selected engine drops the cached contexts`() {
@@ -52,14 +52,14 @@ internal class PyLspTypeEngineServerStateTest {
 
   /** The server listener of a ty client for the module, in a project that selects [selected]. */
   private fun tyListener(selected: PyTypeEngineType): LspServerListener {
-    val module = moduleFixture.get()
+    val module = pyProjectFixture.get().residesOnModule
     // `loadState` sets the engine without the settings-change message, which would start servers.
     PyTypeEngineProjectSettings.getInstance(module.project).loadState(PyTypeEngineSettingsState(selected))
     return TyLspClientDescriptor(module, listOf(module)).lspServerListener
   }
 
   private fun dropsCachedContexts(action: () -> Unit): Boolean {
-    val tracker = PyTypeEngineSettingsModificationTracker.getInstance(moduleFixture.get().project)
+    val tracker = PyTypeEngineSettingsModificationTracker.getInstance(pyProjectFixture.get().residesOnModule.project)
     val before = tracker.modificationCount
     action()
     return tracker.modificationCount != before

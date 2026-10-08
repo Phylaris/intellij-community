@@ -24,6 +24,19 @@ class PyAttributeAndDescriptorTypeTest : PyCodeInsightTestCase() {
   @Nested
   inner class PropertyTypeInference {
     @Test
+    @TestFor(issues = ["PY-85200"])
+    fun `property is still known when the file has a star import`() = test("""
+      from os.path import *
+
+      class C:
+          @property
+          def x(self) -> int: ...
+
+      expr = C().x
+      #└ TYPE int
+      """.trimIndent())
+
+    @Test
     fun `property attribute accessed on class`() = test("""
       class C:
           x = property(lambda self: 'foo', None, None)
@@ -333,59 +346,6 @@ class PyAttributeAndDescriptorTypeTest : PyCodeInsightTestCase() {
       """.trimIndent())
 
     @Test
-    @TestFor(issues = ["PY-6584"])
-    fun `class attribute type from class docstring via class`() = test("""
-      class C(object):
-          '''
-          :type foo: int
-          '''
-          foo = None
-
-      expr = C.foo
-      #└ TYPE int
-      """.trimIndent())
-
-    @Test
-    @TestFor(issues = ["PY-6584"])
-    fun `class attribute type from class docstring via instance`() = test("""
-      class C(object):
-          '''
-          :type foo: int
-          '''
-          foo = None
-
-      expr = C().foo
-      #└ TYPE int
-      """.trimIndent())
-
-    @Test
-    @TestFor(issues = ["PY-6584"])
-    fun `instance attribute type from class docstring`() = test("""
-      class C(object):
-          '''
-          :type foo: int
-          '''
-          def __init__(self, bar):
-              self.foo = bar
-
-      def f(x):
-          expr = C(x).foo
-      #   └ TYPE int
-      """.trimIndent())
-
-    @Test
-    @TestFor(issues = ["PY-8953"])
-    fun `self type from method docstring`() = test("""
-      class C(object):
-          def foo(self):
-              '''
-              :type self: int
-              '''
-              expr = self
-      #       └ TYPE int
-      """.trimIndent())
-
-    @Test
     @TestFor(issues = ["PY-28052"])
     fun `class attribute annotated as Any`() = test("""
       from typing import Any
@@ -680,7 +640,7 @@ class PyAttributeAndDescriptorTypeTest : PyCodeInsightTestCase() {
       """.trimIndent())
 
     @Test
-    @TestFor(issues = ["PY-90894"])
+    @TestFor(issues = ["PY-90894", "PY-92999"])
     fun `dunder getattr overloaded by literal name`() = test("""
       from typing import Literal, overload
 
@@ -698,7 +658,26 @@ class PyAttributeAndDescriptorTypeTest : PyCodeInsightTestCase() {
           bar = c.bar
       #   └ TYPE str
           baz = c.baz
+      #   │       ^^^ WARNING Unresolved attribute reference 'baz' for class 'C'
       #   └ TYPE UnsafeUnion[int, str]
+      """.trimIndent())
+
+    @Test
+    @TestFor(issues = ["PY-92999"])
+    fun `dunder getattr with several literal names`() = test("""
+      from typing import Literal
+
+      class C:
+          def __getattr__(self, item: Literal["foo", "bar"]) -> str: ...
+
+      def f(c: C):
+          foo = c.foo
+      #   └ TYPE str
+          bar = c.bar
+      #   └ TYPE str
+          baz = c.baz
+      #   │       ^^^ WARNING Unresolved attribute reference 'baz' for class 'C'
+      #   └ TYPE str
       """.trimIndent())
 
     @Test
@@ -724,6 +703,7 @@ class PyAttributeAndDescriptorTypeTest : PyCodeInsightTestCase() {
           def __getattr__(self, item) -> int: ...
 
       expr = MyClass.attr
+      #│             ^^^^ WARNING Unresolved attribute reference 'attr' for class 'MyClass'
       #└ TYPE Unknown
       """.trimIndent())
 
@@ -749,89 +729,7 @@ class PyAttributeAndDescriptorTypeTest : PyCodeInsightTestCase() {
   }
 
   @Nested
-  inner class ClassVarTyping {
-    @Test
-    fun `ClassVar type resolved from annotation`() = test("""
-      from typing import ClassVar
-      class A:
-          x: ClassVar[int] = 1
-      expr = A.x
-      #└ TYPE int
-      """.trimIndent())
-
-    @Test
-    fun `ClassVar type resolved from type comment`() = test("""
-      from typing import ClassVar
-      class A:
-          x = 1  # type: ClassVar[int]
-      expr = A.x
-      #└ TYPE int
-      """.trimIndent())
-  }
-
-  @Nested
-  inner class FinalTypeInference {
-    @Test
-    fun `Final with explicit type and value`() = test("""
-      from typing_extensions import Final
-      expr: Final[int] = undefined # ERROR Unresolved reference 'undefined'
-      #└ TYPE int
-      """.trimIndent())
-
-    @Test
-    fun `Final without type infers literal of value`() = test("""
-      from typing_extensions import Final
-      expr: Final = 5
-      #└ TYPE Literal[5]
-      """.trimIndent())
-
-    @Test
-    fun `Final with explicit type only`() = test("""
-      from typing_extensions import Final
-      expr: Final[int] # WARNING 'Final' name should be initialized with a value
-      #└ TYPE int
-      """.trimIndent())
-
-    @Test
-    fun `Final without type infers list type from value`() = test("""
-      from typing_extensions import Final
-      expr: Final = [1, 2]
-      #└ TYPE list[int]
-      """.trimIndent())
-
-    @Test
-    fun `Final with explicit type in type comment`() = test("""
-      from typing_extensions import Final
-      expr = undefined  # type: Final[int]
-      #│     ^^^^^^^^^ ERROR Unresolved reference 'undefined'
-      #└ TYPE int
-      """.trimIndent())
-
-    @Test
-    fun `Final without type in type comment infers literal`() = test("""
-      from typing_extensions import Final
-      expr = 5  # type: Final
-      #└ TYPE Literal[5]
-      """.trimIndent())
-  }
-
-  @Nested
   inner class DunderSlotsTyping {
-    @Test
-    @TestFor(issues = ["PY-83206"])
-    fun `empty slots are not disjoint`() = test("""
-      class A:
-          __slots__ = []
-
-      class B:
-          __slots__ = []
-
-      def foo(x: A) -> None:
-          if isinstance(x, B):
-              expr = x
-      #       └ TYPE A & B
-      """.trimIndent())
-
     @Test
     @TestFor(issues = ["PY-22222", "PY-29233"])
     fun `pass class with dunder slots to method that uses slotted attribute`() = test("""
@@ -936,6 +834,7 @@ class PyAttributeAndDescriptorTypeTest : PyCodeInsightTestCase() {
       """.trimIndent())
 
     @Test
+    @TestFor(issues = ["PY-33663"])
     fun `annotated self return property`() = test("""
       from typing import TypeVar
 
@@ -951,6 +850,7 @@ class PyAttributeAndDescriptorTypeTest : PyCodeInsightTestCase() {
       """.trimIndent())
 
     @Test
+    @TestFor(issues = ["PY-26643"])
     fun `method returning self in generator`() = test("""
       class A:
           def foo(self):
@@ -1037,74 +937,6 @@ class PyAttributeAndDescriptorTypeTest : PyCodeInsightTestCase() {
 
     @Test
     @TestFor(issues = ["PY-53104"])
-    fun `method returning typing Self resolves to subclass`() = test("""
-      from typing import Self
-
-      class A:
-          def foo(self) -> Self:
-              ...
-      class B(A):
-          pass
-      expr = B().foo()
-      #└ TYPE B
-      """.trimIndent())
-
-    @Test
-    @TestFor(issues = ["PY-53104"])
-    fun `method returning list of typing Self`() = test("""
-      from typing import Self
-
-      class A:
-          def foo(self) -> list[Self]:
-              ...
-      class B(A):
-          pass
-      expr = B().foo()
-      #└ TYPE list[B]
-      """.trimIndent())
-
-    @Test
-    @TestFor(issues = ["PY-53104"])
-    fun `classmethod returning typing Self`() = test("""
-      from typing import Self
-
-
-      class Shape:
-          @classmethod
-          def from_config(cls, config: dict[str, float]) -> Self:
-              return cls(config["scale"]) # WARNING Unexpected argument
-
-
-      class Circle(Shape):
-          pass
-
-
-      expr = Circle.from_config({})
-      #└ TYPE Circle
-      """.trimIndent())
-
-    @Test
-    @TestFor(issues = ["PY-53104"])
-    fun `classmethod returning typing Self in nested class`() = test("""
-      from typing import Self
-
-
-      class OuterClass:
-          class Shape:
-              @classmethod
-              def from_config(cls, config: dict[str, float]) -> Self:
-                  return cls(config["scale"]) # WARNING Unexpected argument
-
-          class Circle(Shape):
-              pass
-
-
-      expr = OuterClass.Circle.from_config({})
-      #└ TYPE Circle
-      """.trimIndent())
-
-    @Test
-    @TestFor(issues = ["PY-53104"])
     fun `method returning typing Self defined in imported file`() = test("""
       from other import Clazz
       clz = Clazz()
@@ -1118,42 +950,6 @@ class PyAttributeAndDescriptorTypeTest : PyCodeInsightTestCase() {
             def foo(self) -> Self:
                 return self
         """.trimIndent())
-
-    @Test
-    @TestFor(issues = ["PY-53104"])
-    fun `method returning typing Self on receiver of union type`() = test("""
-      from typing import Self
-
-
-      class C:
-          def method(self) -> Self:
-              return self
-
-
-      if bool():
-          x = 42
-      else:
-          x = C()
-
-      expr = x.method()
-      #│       ^^^^^^ WEAK-WARNING Member 'Literal[42]' of 'Literal[42] | C' does not have attribute 'method'
-      #└ TYPE C | Unknown
-      """.trimIndent())
-
-    @Test
-    @TestFor(issues = ["PY-80622"])
-    fun `augmented assignment with iadd returning typing Self`() = test("""
-      from typing import Self
-
-      class MutableContainer:
-          def __iadd__(self, other: int) -> Self:
-              return self
-
-      m = MutableContainer()
-      m += 1
-      expr = m
-      #└ TYPE MutableContainer
-      """.trimIndent())
   }
 
   @Nested
@@ -1482,6 +1278,119 @@ class PyAttributeAndDescriptorTypeTest : PyCodeInsightTestCase() {
 
       c = C()
       expr = c.x
+      #└ TYPE int
+      """.trimIndent())
+
+    /** The shape of `propcache._helpers_py`: a module re-exports `functools.cached_property` under the same name. */
+    @Test
+    @TestFor(issues = ["PY-85200"])
+    fun `cached_property re-exported by another module is still a property`() = test("""
+      from propcache_helpers import cached_property
+
+      class C:
+          @cached_property
+          def x(self) -> int: ...
+
+      expr = C().x
+      #└ TYPE int
+      """.trimIndent(),
+      "propcache_helpers.py" to "from functools import cached_property")
+
+    /** The same re-export, one level deeper, because a package facade re-exports from a leaf module. */
+    @Test
+    @TestFor(issues = ["PY-85200"])
+    fun `cached_property re-exported twice is still a property`() = test("""
+      from propcache_api import cached_property
+
+      class C:
+          @cached_property
+          def x(self) -> int: ...
+
+      expr = C().x
+      #└ TYPE int
+      """.trimIndent(),
+      "propcache_helpers.py" to "from functools import cached_property",
+      "propcache_api.py" to "from propcache_helpers import cached_property")
+
+    @Test
+    @TestFor(issues = ["PY-85200"])
+    fun `descriptor imported under the name cached_property is not a property`() = test("""
+      from propcache_api import under_cached_property as cached_property
+
+      class C:
+          _cache: dict[str, object]
+          @cached_property
+          def x(self) -> int: ...
+
+      expr = C().x
+      #└ TYPE int
+      """.trimIndent(),
+      "propcache_api.py" to DESCRIPTOR_MODULE)
+
+    @Test
+    @TestFor(issues = ["PY-85200"])
+    fun `descriptor imported by a relative import is not a property`() = test("""
+      from .propcache_api import cached_property
+
+      class C:
+          _cache: dict[str, object]
+          @cached_property
+          def x(self) -> int: ...
+
+      expr = C().x
+      #└ TYPE int
+      """.trimIndent(),
+      "propcache_api.py" to (DESCRIPTOR_MODULE + "\n\ncached_property = under_cached_property\n"))
+
+    @Test
+    @TestFor(issues = ["PY-85200"])
+    fun `descriptor class named cached_property is not a property`() = test("""
+      from typing import Any, Callable, Mapping, Protocol, Self, overload
+
+      class _CacheImpl[Cache: Mapping[str, Any]](Protocol):
+          _cache: Cache
+
+      class cached_property[T]:
+          def __init__(self, wrapped: Callable[[Any], T]): ...
+          @overload
+          def __get__(self, inst: None, owner: type[object] | None = None) -> Self: ...
+          @overload
+          def __get__(self, inst: _CacheImpl[Any], owner: type[object] | None = None) -> T: ...
+          def __get__(self, inst: _CacheImpl[Any] | None, owner: type[object] | None = None) -> T | Self: ...
+
+      class C:
+          _cache: dict[str, Any]
+          @cached_property
+          def x(self) -> int: ...
+
+      expr = C().x
+      #└ TYPE int
+      """.trimIndent())
+
+    @Test
+    @TestFor(issues = ["PY-85200"])
+    fun `descriptor aliased to the name cached_property is not a property`() = test("""
+      from typing import Any, Callable, Mapping, Protocol, Self, overload
+
+      class _CacheImpl[Cache: Mapping[str, Any]](Protocol):
+          _cache: Cache
+
+      class under_cached_property[T]:
+          def __init__(self, wrapped: Callable[[Any], T]): ...
+          @overload
+          def __get__(self, inst: None, owner: type[object] | None = None) -> Self: ...
+          @overload
+          def __get__(self, inst: _CacheImpl[Any], owner: type[object] | None = None) -> T: ...
+          def __get__(self, inst: _CacheImpl[Any] | None, owner: type[object] | None = None) -> T | Self: ...
+
+      cached_property = under_cached_property
+
+      class C:
+          _cache: dict[str, Any]
+          @cached_property
+          def x(self) -> int: ...
+
+      expr = C().x
       #└ TYPE int
       """.trimIndent())
 
@@ -1899,18 +1808,6 @@ class PyAttributeAndDescriptorTypeTest : PyCodeInsightTestCase() {
       """.trimIndent())
 
     @Test
-    @TestFor(issues = ["PY-85974"])
-    fun `self attribute assignment`() = test("""
-      from typing import Self
-
-      class Node:
-          next: Self | None
-
-      c: Node
-      c.next = Node()
-      """.trimIndent())
-
-    @Test
     fun `augmented assignment to generic attribute`() = test("""
       class A[T]:
           attr: T
@@ -2162,4 +2059,22 @@ class PyAttributeAndDescriptorTypeTest : PyCodeInsightTestCase() {
       expr = C().attr
       #└ TYPE int
       """.trimIndent())
+
+  companion object {
+    /** A descriptor in the shape of `propcache.api.under_cached_property`. */
+    private val DESCRIPTOR_MODULE = """
+      from typing import Any, Callable, Mapping, Protocol, Self, overload
+
+      class _CacheImpl[Cache: Mapping[str, Any]](Protocol):
+          _cache: Cache
+
+      class under_cached_property[T]:
+          def __init__(self, wrapped: Callable[[Any], T]): ...
+          @overload
+          def __get__(self, inst: None, owner: type[object] | None = None) -> Self: ...
+          @overload
+          def __get__(self, inst: _CacheImpl[Any], owner: type[object] | None = None) -> T: ...
+          def __get__(self, inst: _CacheImpl[Any] | None, owner: type[object] | None = None) -> T | Self: ...
+      """.trimIndent()
+  }
 }

@@ -2,7 +2,7 @@
 package org.intellij.plugins.markdown.editor.livepreview
 
 import com.intellij.ide.rpc.DocumentPatchVersion
-import com.intellij.ide.rpc.DocumentPatchVersionAccessor
+import com.intellij.ide.rpc.patchVersion
 import com.intellij.openapi.editor.Document
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.project.Project
@@ -90,7 +90,7 @@ data class MarkdownLivePreviewDocumentVersion(
     @JvmStatic
     fun capture(document: Document, project: Project): MarkdownLivePreviewDocumentVersion {
       return MarkdownLivePreviewDocumentVersion(
-        DocumentPatchVersionAccessor.getDocumentVersion(document, project),
+        document.patchVersion(project),
         document.modificationStamp,
       )
     }
@@ -125,14 +125,20 @@ sealed interface MarkdownLivePreviewSpec {
     val ruleRange: MarkdownLivePreviewRange,
     /** Keeps each quote level two spaces wide. A space or a tab after the marker stays source text and gives the second space. */
     val placeholderText: String,
+    /** The rule takes the title color of this alert type. A regular blockquote has no alert type. */
+    val alertType: AlertType? = null,
   ) : MarkdownLivePreviewSpec
+
+  @Serializable
+  enum class AlertType { NOTE, TIP, IMPORTANT, WARNING, CAUTION }
 
   /** Conceals a full logical line and paints it as a horizontal rule. */
   @Serializable
   data class HorizontalRule(override val range: MarkdownLivePreviewRange) : MarkdownLivePreviewSpec
 
   /**
-   * Renders a top-level ATX heading over its full logical line.
+   * Renders a top-level ATX or Setext heading over its full logical line.
+   * The range of a Setext heading excludes its underline. A separate [HorizontalRule] covers the underline.
    * The frontend uses [level] to select the HTML heading element.
    * [html] is inline HTML. Each text run in it is a span with its `md-src-pos` source range.
    * The source ranges are relative to the start of [range].

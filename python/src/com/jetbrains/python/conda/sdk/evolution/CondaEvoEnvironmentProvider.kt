@@ -1,3 +1,4 @@
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.jetbrains.python.conda.sdk.evolution
 
 import kotlin.io.path.pathString
@@ -41,6 +42,7 @@ import com.jetbrains.python.sdk.flavors.conda.PyCondaCommand
 import com.jetbrains.python.sdk.flavors.conda.PyCondaEnv
 import com.jetbrains.python.sdk.flavors.conda.PyCondaEnvIdentity
 import com.intellij.python.sdk.backend.PySdkBundle
+import com.intellij.python.sdk.backend.PythonInterpreter
 import com.intellij.python.sdk.backend.resolvePythonBinary
 import java.nio.file.Path
 import kotlin.io.path.name
@@ -101,7 +103,7 @@ internal class CondaEvoEnvironmentProvider : PyToolEvoEnvironmentProvider() {
   }
 
   /** Adopts an existing conda env (named or `-p`-created) as a conda-typed SDK, matched by the env directory. */
-  override suspend fun createSdkForExistingEnv(context: EvoToolContext, homePath: Path): PyResult<Sdk> {
+  override suspend fun createSdkForExistingEnv(context: EvoToolContext, homePath: Path): PyResult<PythonInterpreter> {
     val condaExecutable = executableOrNull(context.fileSystem) ?: return toolMissing()
     val envDir = homePath.parent?.parent
                  ?: return PyResult.localizedError(PySdkBundle.message("evolution.error.env.not.found", homePath.toString()))
@@ -113,7 +115,8 @@ internal class CondaEvoEnvironmentProvider : PyToolEvoEnvironmentProvider() {
         is PyCondaEnvIdentity.NamedEnv -> envDir.fileName?.toString() == identity.envName
       }
     } ?: return PyResult.localizedError(PySdkBundle.message("evolution.error.env.not.found", envDir.toString()))
-    return env.createSdkFromThisEnv(null, PythonSdkUtil.getAllSdks(), context.workspace.baseDir)
+    return env.createSdkFromThisEnv(context.workspace.moduleOrProject, null, PythonSdkUtil.getAllSdks(context.workspace.pyProject),
+                                    context.workspace.baseDir)
   }
 
   /**
@@ -122,7 +125,7 @@ internal class CondaEvoEnvironmentProvider : PyToolEvoEnvironmentProvider() {
    * No base interpreter is involved — conda provides the Python for the requested version itself, which is why its
    * version list is conda's own rather than the machine's system Pythons.
    */
-  override suspend fun createSdkForNewEnv(context: EvoToolContext, ref: PyInterpreterRef.CreateEnv): PyResult<Sdk> {
+  override suspend fun createSdkForNewEnv(context: EvoToolContext, ref: PyInterpreterRef.CreateEnv): PyResult<PythonInterpreter> {
     val condaExecutable = executableOrNull(context.fileSystem) ?: return toolMissing()
     val envName = ref.name?.takeIf { it.isNotBlank() } ?: ref.folder?.takeIf { it.isNotBlank() }
                   ?: return PyResult.localizedError(PySdkBundle.message("evolution.error.env.name.missing"))
@@ -130,8 +133,9 @@ internal class CondaEvoEnvironmentProvider : PyToolEvoEnvironmentProvider() {
                         ?: return PyResult.localizedError(PySdkBundle.message("evolution.error.bad.python.version", ref.token, ""))
     return PyCondaCommand(condaExecutable.path.toString(), null)
       .createCondaSdkAlongWithNewEnv(
+        context.workspace.moduleOrProject,
         NewCondaEnvRequest.EmptyNamedEnv(languageLevel, envName),
-        PythonSdkUtil.getAllSdks(),
+        PythonSdkUtil.getAllSdks(context.workspace.pyProject),
         context.workspace.baseDir,
       )
   }
@@ -168,7 +172,7 @@ internal class CondaEvoEnvironmentProvider : PyToolEvoEnvironmentProvider() {
    * Windows is the known weak spot: conda cannot always replace an environment in place there, and says so — see
    * [NewCondaEnvRequest.LocalEnvByLocalEnvironmentFile], which updates rather than recreates for that reason.
    */
-  override suspend fun recreateEnv(context: EvoToolContext, homePath: Path, spec: EvoRecreateSpec): PyResult<Sdk> {
+  override suspend fun recreateEnv(context: EvoToolContext, homePath: Path, spec: EvoRecreateSpec): PyResult<PythonInterpreter> {
     val condaExecutable = executableOrNull(context.fileSystem) ?: return toolMissing()
     val envDir = namedEnvDir(homePath)
                  ?: return PyResult.localizedError(PySdkBundle.message("evolution.error.conda.base.env", homePath.toString()))

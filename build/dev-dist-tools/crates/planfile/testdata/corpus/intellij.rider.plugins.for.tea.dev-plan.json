@@ -2,7 +2,6 @@
     "version": 2,
     "plugin": "intellij.rider.plugins.for.tea",
     "variant": "",
-    "layoutSignature": "a5l9nbl1b36y8ty646gtmf48j",
     "assets": [
         {
             "destination": "lib/rider-plugins-for-tea.jar",
@@ -35,18 +34,6 @@
             ],
             "kind": "tree",
             "classPath": false
-        }
-    ],
-    "preparations": [
-        {
-            "id": "layout-assets:resource-generator:0",
-            "inputs": [
-                "optional-local-directory:out/bundle-plugins/rider-plugins-for-tea"
-            ],
-            "outputs": [
-                "layout-assets:resource-generator:0:output"
-            ],
-            "modelSignature": "1pa9b0fmchnseaj0ry3yzgp7i"
         }
     ],
     "operations": [

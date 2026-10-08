@@ -30,7 +30,6 @@ import com.intellij.debugger.statistics.StatisticsStorage;
 import com.intellij.debugger.ui.breakpoints.Breakpoint;
 import com.intellij.debugger.ui.breakpoints.InstrumentationTracker;
 import com.intellij.debugger.ui.breakpoints.RunToCursorBreakpoint;
-import com.intellij.debugger.ui.breakpoints.StackCapturingLineBreakpoint;
 import com.intellij.debugger.ui.breakpoints.SyntheticBreakpoint;
 import com.intellij.debugger.ui.overhead.OverheadProducer;
 import com.intellij.debugger.ui.overhead.OverheadTimings;
@@ -119,14 +118,26 @@ public class DebugProcessEvents extends DebugProcessImpl {
 
   public DebugProcessEvents(Project project) {
     super(project);
-    DebuggerSettings.getInstance().addCapturePointsSettingsListener(this::createStackCapturingBreakpoints, disposable);
   }
 
   @Override
   protected @NotNull VirtualMachineProxyImpl commitVM(final VirtualMachine vm) {
     VirtualMachineProxyImpl proxy = super.commitVM(vm);
     if (vm != null) {
-      vmAttached(proxy);
+      if (!vmAttached(proxy)) {
+        // A stop that overlapped this attach has detached already, maybe before the proxy was set, so nobody else
+        // disposes this VM, and an event thread would wait on its event queue forever.
+        LOG.debug("VM attached after the process was stopped, disposing it");
+        try {
+          proxy.dispose();
+        }
+        catch (VMDisconnectedException ignored) {
+        }
+        finally {
+          DebuggerManagerThreadImpl.getCurrentThread().setVmProxy(null);
+        }
+        return proxy;
+      }
       if (vm.canBeModified()) {
         DebuggerManagerThreadImpl managerThread = DebuggerManagerThreadImpl.getCurrentThread();
         DebuggerEventThread eventThread = myEventThreads.computeIfAbsent(vm, _ -> new DebuggerEventThread(managerThread));
@@ -413,7 +424,8 @@ public class DebugProcessEvents extends DebugProcessImpl {
     getSuspendManager().voteResume(suspendContext);
   }
 
-  private void vmAttached(VirtualMachineProxyImpl machineProxy) {
+  /** Returns false if the process left its initial state before the attach, which happens when a stop overlaps it. */
+  private boolean vmAttached(VirtualMachineProxyImpl machineProxy) {
     DebuggerManagerThreadImpl.assertIsManagerThread();
     LOG.assertTrue(!isAttached());
     if (myState.compareAndSet(State.INITIAL, State.ATTACHED)) {
@@ -478,7 +490,6 @@ public class DebugProcessEvents extends DebugProcessImpl {
       forEachSafe(myDebugProcessListeners, it -> it.processAttached(this));
 
       if (canBeModified) {
-        createStackCapturingBreakpoints();
         AsyncStacksUtils.setupAgent(this);
         CollectionBreakpointUtils.setupCollectionBreakpointAgent(this);
       }
@@ -509,19 +520,14 @@ public class DebugProcessEvents extends DebugProcessImpl {
           ShowSessionTabUtils.showFrames(getProject(), session.getId());
         }
       }
+      return true;
     }
+    return false;
   }
 
   private void trackClassRedefinitions() {
     DebuggerManagerThreadImpl.assertIsManagerThread();
     InstrumentationTracker.track(this);
-  }
-
-  private void createStackCapturingBreakpoints() {
-    getManagerThread().schedule(PrioritizedTask.Priority.HIGH, () -> {
-      StackCapturingLineBreakpoint.deleteAll(this);
-      StackCapturingLineBreakpoint.createAll(this);
-    });
   }
 
   private void processVMDeathEvent(@NotNull SuspendContextImpl suspendContext, @Nullable Event event) {
@@ -824,7 +830,7 @@ public class DebugProcessEvents extends DebugProcessImpl {
           }
           if (requestor instanceof OverheadProducer overheadProducer && overheadProducer.track()) {
             OverheadTimings.add(DebugProcessEvents.this, overheadProducer,
-                                requestHit || requestor instanceof StackCapturingLineBreakpoint ? 1 : 0,
+                                requestHit ? 1 : 0,
                                 timeMs);
           }
         }

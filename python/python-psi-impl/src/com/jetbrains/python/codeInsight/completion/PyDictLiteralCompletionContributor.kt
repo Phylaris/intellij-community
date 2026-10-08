@@ -57,7 +57,7 @@ private class DictLiteralCompletionProvider : CompletionProvider<CompletionParam
       possibleSequenceExpr = possibleSequenceExpr.parent
     }
     if (possibleSequenceExpr is PyDictLiteralExpression || possibleSequenceExpr is PySetLiteralExpression) { // it's set literal when user is typing the first key
-      addCompletionToCallExpression(originalElement, possibleSequenceExpr as PySequenceExpression, result)
+      addCompletionToCallExpression(originalElement, possibleSequenceExpr, result)
       addCompletionToAssignment(originalElement, possibleSequenceExpr, result)
       addCompletionToReturnStatement(originalElement, possibleSequenceExpr, result)
     }
@@ -128,9 +128,11 @@ private class DictLiteralCompletionProvider : CompletionProvider<CompletionParam
       val targetToValue = if (assignment.targets.size == 1) assignment.targets[0] to assignment.assignedValue
       else assignment.targetsToValuesMapping.firstOrNull { it.second == possibleSequenceExpr }?.let { it.first to it.second }
 
-      if (targetToValue?.first != null && targetToValue.second != null) {
-        val expectedType = typeEvalContext.getType(targetToValue.first!!)
-        addCompletionForTypedDictKeys(expectedType, targetToValue.second!!, result, getForcedQuote(possibleSequenceExpr, originalElement),
+      val target = targetToValue?.first
+      val value = targetToValue?.second
+      if (target != null && value != null) {
+        val expectedType = typeEvalContext.getType(target)
+        addCompletionForTypedDictKeys(expectedType, value, result, getForcedQuote(possibleSequenceExpr, originalElement),
                                      typeEvalContext)
       }
       else { //multiple target expressions and there is a PsiErrorElement

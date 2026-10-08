@@ -39,6 +39,14 @@
     <module name="intellij.libraries.ktor.server.cio"/>
     <!-- endregion -->
 
+    <!-- region nested: core.ide > core.platform > libraries.platform > libraries.netty -->
+    <module name="intellij.libraries.netty.buffer" loading="embedded"/>
+    <module name="intellij.libraries.netty.codec.compression" loading="embedded"/>
+    <module name="intellij.libraries.netty.codec.http" loading="embedded"/>
+    <module name="intellij.libraries.netty.codec.protobuf" loading="embedded"/>
+    <module name="intellij.libraries.netty.handler.proxy"/>
+    <!-- endregion -->
+
     <!-- region direct modules -->
     <module name="intellij.libraries.java.compatibility" loading="embedded"/>
     <module name="intellij.libraries.jetbrains.annotations" loading="embedded"/>
@@ -64,6 +72,7 @@
     <module name="intellij.libraries.bouncy.castle.pgp" loading="embedded"/>
     <module name="intellij.libraries.blockmap" loading="embedded"/>
     <module name="intellij.libraries.caffeine" loading="embedded"/>
+    <module name="intellij.libraries.jspecify" loading="embedded"/>
     <module name="intellij.libraries.classgraph" loading="embedded"/>
     <module name="intellij.libraries.cli.parser" loading="embedded"/>
     <module name="intellij.libraries.commons.cli"/>
@@ -98,11 +107,6 @@
     <module name="intellij.libraries.lz4" loading="embedded"/>
     <module name="intellij.libraries.markdown" loading="embedded"/>
     <module name="intellij.libraries.mvstore" loading="embedded"/>
-    <module name="intellij.libraries.netty.buffer" loading="embedded"/>
-    <module name="intellij.libraries.netty.codec.compression" loading="embedded"/>
-    <module name="intellij.libraries.netty.codec.http" loading="embedded"/>
-    <module name="intellij.libraries.netty.codec.protobuf" loading="embedded"/>
-    <module name="intellij.libraries.netty.handler.proxy"/>
     <module name="intellij.libraries.oro.matcher" loading="embedded"/>
     <module name="intellij.libraries.protobuf" loading="embedded"/>
     <module name="intellij.libraries.protobuf.kotlin"/>
@@ -167,6 +171,7 @@
     <!-- endregion -->
 
     <!-- region direct modules -->
+    <module name="intellij.platform.productMode" loading="embedded"/>
     <module name="intellij.platform.runtime.product" loading="embedded"/>
     <module name="intellij.platform.bazel.runfiles" loading="embedded"/>
     <module name="intellij.platform.buildScripts.concurrency"/>
@@ -271,8 +276,10 @@
     <module name="intellij.platform.usageView.impl" loading="embedded"/>
     <module name="intellij.platform.welcomeScreen.impl" loading="embedded"/>
     <module name="intellij.platform.icons.impl.intellij" loading="embedded"/>
-    <module name="intellij.platform.execution" loading="embedded"/>
-    <module name="intellij.platform.execution.impl" loading="embedded"/>
+    <module name="intellij.platform.consoleView" loading="embedded"/>
+    <module name="intellij.platform.consoleView.impl" loading="embedded"/>
+    <module name="intellij.platform.execution"/>
+    <module name="intellij.platform.execution.impl"/>
     <module name="intellij.platform.lvcs" loading="embedded"/>
     <module name="intellij.platform.configurationStore.impl" loading="embedded"/>
     <module name="intellij.platform.lang.core" loading="embedded"/>
@@ -292,6 +299,11 @@
     <module name="intellij.platform.indexing.impl" loading="embedded"/>
     <module name="intellij.platform.refactoring" loading="embedded"/>
     <module name="intellij.platform.ide.impl" loading="embedded"/>
+    <module name="intellij.platform.undo" loading="embedded"/>
+    <module name="intellij.platform.ui.tree" loading="embedded"/>
+    <module name="intellij.platform.vfs.impl" loading="embedded"/>
+    <module name="intellij.platform.ide.json" loading="embedded"/>
+    <module name="intellij.platform.ide.dnd" loading="embedded"/>
     <module name="intellij.platform.ide.codeinsight.inline" loading="embedded"/>
     <module name="intellij.platform.pasta" loading="embedded"/>
     <module name="intellij.platform.diagnostic.startUpPerformanceReporter" loading="embedded"/>
@@ -301,17 +313,24 @@
     <module name="intellij.libraries.zip.signer"/>
     <module name="intellij.platform.rd.community" loading="embedded"/>
     <module name="intellij.platform.remote.core" loading="embedded"/>
-    <module name="intellij.platform.ide.remote" loading="embedded"/>
-    <module name="intellij.platform.threadDumpParser" loading="embedded"/>
-    <module name="intellij.platform.ide.favoritesTreeView" loading="embedded"/>
-    <module name="intellij.platform.ide.designer" loading="embedded"/>
+    <module name="intellij.platform.ide.remote"/>
+    <module name="intellij.platform.ide.colorPicker"/>
+    <module name="intellij.platform.ide.hprof"/>
+    <module name="intellij.platform.ide.errorTreeView"/>
+    <module name="intellij.platform.ide.learnIde"/>
+    <module name="intellij.platform.ide.playback"/>
+    <module name="intellij.platform.ide.fileChooser.universal"/>
+    <module name="intellij.platform.ide.tabInEditor"/>
+    <module name="intellij.platform.threadDumpParser"/>
+    <module name="intellij.platform.ide.favoritesTreeView"/>
+    <module name="intellij.platform.ide.designer"/>
+    <module name="intellij.platform.ide.initialConfigImport" loading="embedded"/>
     <module name="intellij.platform.ide.bootstrap" loading="embedded"/>
     <module name="intellij.platform.bootstrap" loading="embedded"/>
     <module name="intellij.platform.backend.workspace.impl"/>
     <module name="intellij.platform.ide.concurrency" loading="embedded"/>
     <module name="intellij.platform.builtInServer" loading="embedded"/>
-    <module name="intellij.platform.discoverability" loading="embedded"/>
-    <module name="intellij.platform.externalSystem"/>
+    <module name="intellij.platform.discoverability"/>
     <module name="intellij.platform.eel.impl" loading="embedded"/>
     <module name="intellij.platform.eel.nioFs.impl" loading="embedded"/>
     <module name="intellij.platform.eel.impl.base" loading="embedded"/>

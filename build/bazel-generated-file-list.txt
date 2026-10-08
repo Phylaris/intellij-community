@@ -338,6 +338,7 @@ java/java-impl-inspections
 java/java-impl-jsp
 java/java-impl-refactorings
 java/java-impl-refactorings-jsp
+java/java-impl/testFramework
 java/java-indexing-api
 java/java-indexing-impl
 java/java-indexing-serializers
@@ -357,6 +358,7 @@ java/jsp-spi
 java/langInjection
 java/langInjection/jps
 java/manifest
+java/mcp
 java/openapi
 java/performancePlugin
 java/plugin
@@ -385,6 +387,7 @@ jps/standalone-builder
 json
 json/backend
 json/backend/regexp
+json/backend/spellchecker
 json/backend/tests
 json/networknt.wrapper
 json/networknt.wrapper/tests
@@ -545,6 +548,7 @@ libraries/keychain
 libraries/kodein-di-jvm
 libraries/kotlin/gradle-plugin-idea
 libraries/kotlin/gradle-plugin-idea-proto
+libraries/kotlin/gradle.plugin.idea.browser.debug
 libraries/kotlin/logging
 libraries/kotlin/metadata
 libraries/kotlin/reflect
@@ -561,7 +565,6 @@ libraries/kotlinc/assignment-compiler-plugin
 libraries/kotlinc/compose-compiler-plugin
 libraries/kotlinc/js-plain-objects-compiler-plugin
 libraries/kotlinc/kotlin-compiler-common
-libraries/kotlinc/kotlin-compiler-fe10
 libraries/kotlinc/kotlin-compiler-fir
 libraries/kotlinc/kotlin-compiler-ir
 libraries/kotlinc/kotlin-dataframe-compiler-plugin
@@ -705,6 +708,7 @@ notebooks/visualization/testFramework
 platform/analysis-api
 platform/analysis-impl
 platform/backend
+platform/backend/baseline
 platform/backend/observation
 platform/backend/workspace
 platform/backend/workspace.impl
@@ -723,6 +727,7 @@ platform/build-scripts/api
 platform/build-scripts/bazel-rules/searchable-options-injector
 platform/build-scripts/codeOptimizer
 platform/build-scripts/concurrency
+platform/build-scripts/dev-dist-generator
 platform/build-scripts/dev-launch
 platform/build-scripts/dev-server-legacy
 platform/build-scripts/downloader
@@ -757,8 +762,11 @@ platform/completion/frontend
 platform/compose
 platform/compose/compiler-plugin
 platform/compose/markdown
+platform/compose/plugin
 platform/compose/swing-ui
 platform/configuration-store-impl
+platform/consoleView
+platform/consoleView/impl
 platform/core-api
 platform/core-impl
 platform/core-nio-fs
@@ -802,6 +810,7 @@ platform/execution
 platform/execution-impl
 platform/execution-impl/backend
 platform/execution-impl/frontend
+platform/execution-impl/rpc
 platform/execution-process-elevation
 platform/execution-process-mediator/client
 platform/execution-process-mediator/common
@@ -873,6 +882,7 @@ platform/jewel/samples/standalone
 platform/jewel/ui
 platform/jewel/ui-tests
 platform/kernel/backend
+platform/kernel/backend/baseline
 platform/kernel/intellij.platform.kernel.impl
 platform/kernel/klogger
 platform/kernel/pasta
@@ -920,7 +930,6 @@ platform/new-users-onboarding
 platform/non-modal-welcome-screen
 platform/non-modal-welcome-screen/backend
 platform/non-modal-welcome-screen/frontend
-platform/non-modal-welcome-screen/terminal
 platform/object-serializer
 platform/observable
 platform/platform-api
@@ -930,19 +939,32 @@ platform/platform-impl/bootstrap
 platform/platform-impl/bootstrap/eel
 platform/platform-impl/bootstrap/kernel
 platform/platform-impl/codeinsight-inline
+platform/platform-impl/color-picker
 platform/platform-impl/concurrency
 platform/platform-impl/designer
+platform/platform-impl/dnd
 platform/platform-impl/eel
+platform/platform-impl/error-tree-view
+platform/platform-impl/file-chooser-universal
+platform/platform-impl/filter-field
+platform/platform-impl/hprof
 platform/platform-impl/initial-config-import
 platform/platform-impl/internal
 platform/platform-impl/internal/ide.internal.backend
 platform/platform-impl/internal/jcef
 platform/platform-impl/jcef
+platform/platform-impl/json
+platform/platform-impl/learn-ide
+platform/platform-impl/mig-layout
 platform/platform-impl/os-certificates
+platform/platform-impl/playback
 platform/platform-impl/plugin-signature-verifier
+platform/platform-impl/presentation-assistant
 platform/platform-impl/recentProjects
 platform/platform-impl/remote
 platform/platform-impl/rpc
+platform/platform-impl/socket-connection
+platform/platform-impl/tab-in-editor
 platform/platform-impl/ui
 platform/platform-impl/ui-inspector
 platform/platform-impl/update-checker
@@ -962,7 +984,7 @@ platform/platform-util-netty
 platform/pluginManager/backend
 platform/pluginManager/frontend
 platform/pluginManager/shared
-platform/pluginManager/shared.base
+platform/pluginManager/shared.baseline
 platform/pluginManager/testFramework
 platform/pluginSystem/parser/impl
 platform/pluginSystem/testFramework
@@ -975,8 +997,11 @@ platform/problemsView/collector
 platform/problemsView/core
 platform/problemsView/frontend
 platform/problemsView/plugin
+platform/problemsView/security
+platform/problemsView/security/frontend
 platform/problemsView/shared
 platform/problemsView/ui
+platform/productMode
 platform/progress/backend
 platform/progress/shared
 platform/project-frame
@@ -1009,6 +1034,7 @@ platform/remote-topics/backend
 platform/remote-topics/frontend
 platform/remote-topics/shared
 platform/remoteDev-util
+platform/remoteDev/frontendProcessLauncher
 platform/runtime/loader
 platform/runtime/product
 platform/runtime/product/tests
@@ -1085,10 +1111,13 @@ platform/testRunner/plugin
 platform/threadDumpParser
 platform/todo
 platform/todo/backend
+platform/todo/frontend
 platform/todo/plugin
 platform/tracing
 platform/tracing-ide
 platform/ui.jcef
+platform/ui.tree
+platform/undo
 platform/usageView
 platform/usageView-impl
 platform/util
@@ -1134,6 +1163,8 @@ platform/vcs-log/impl
 platform/vcs-log/impl/bookmarks
 platform/vcs-tests
 platform/vcs/plugin
+platform/versionDownloadManager
+platform/vfs-impl
 platform/warmup
 platform/warmup/performanceTesting
 platform/welcome-screen
@@ -1245,6 +1276,8 @@ plugins/devkit/jps-plugin
 plugins/eclipse
 plugins/eclipse/common-eclipse-util
 plugins/eclipse/jps-plugin
+plugins/editor-tab-grouping
+plugins/editor-tab-grouping/plugin
 plugins/editorconfig
 plugins/editorconfig/backend
 plugins/editorconfig/backend.spellchecking
@@ -1268,6 +1301,7 @@ plugins/git-modal-commit
 plugins/git4idea
 plugins/git4idea/backend
 plugins/git4idea/frontend
+plugins/git4idea/hosting
 plugins/git4idea/intellij.vcs.git.coverage
 plugins/git4idea/localHistory
 plugins/git4idea/performanceTesting
@@ -1349,6 +1383,7 @@ plugins/groovy-live-templates
 plugins/groovy-scripting
 plugins/groovy/ant
 plugins/groovy/byteCodeViewer
+plugins/groovy/compiler-tests
 plugins/groovy/git
 plugins/groovy/groovy-psi
 plugins/groovy/groovy-uast-tests
@@ -1568,6 +1603,7 @@ plugins/kotlin/lombok
 plugins/kotlin/lombok/tests
 plugins/kotlin/maven
 plugins/kotlin/maven/tests
+plugins/kotlin/mcp
 plugins/kotlin/migration
 plugins/kotlin/ml-completion
 plugins/kotlin/ml-completion/tests
@@ -1628,6 +1664,8 @@ plugins/lsp.client.playground
 plugins/lsp.ui/idea.product.modules
 plugins/lsp.ui/lsp.ui.frontend
 plugins/lsp.ui/lsp.ui.plugin
+plugins/macros/plugin
+plugins/macros/shared
 plugins/markdown/compose
 plugins/markdown/core
 plugins/markdown/core/backend
@@ -1705,7 +1743,7 @@ plugins/performanceTesting/debugger
 plugins/performanceTesting/event-bus
 plugins/performanceTesting/freezes
 plugins/performanceTesting/frontend
-plugins/performanceTesting/frontend-base
+plugins/performanceTesting/frontend-baseline
 plugins/performanceTesting/problemsView
 plugins/performanceTesting/rdct
 plugins/performanceTesting/remote-driver
@@ -1720,6 +1758,7 @@ plugins/properties/properties-common
 plugins/properties/properties-psi-api
 plugins/properties/properties-psi-impl
 plugins/properties/property-tests
+plugins/properties/structuralsearch
 plugins/properties/tests
 plugins/pty4j/plugin
 plugins/rareJavaRefactorings
@@ -1747,9 +1786,9 @@ plugins/sh/core
 plugins/sh/markdown
 plugins/sh/plugin
 plugins/sh/python
+plugins/sh/spellchecker
 plugins/sh/terminal
 plugins/sh/terminal/frontend
-plugins/skiko/plugin
 plugins/space/jps-plugin
 plugins/stats-collector
 plugins/stream-debugger
@@ -1778,6 +1817,7 @@ plugins/terminal
 plugins/terminal/backend
 plugins/terminal/cloud
 plugins/terminal/completion
+plugins/terminal/completion-ml
 plugins/terminal/emulator
 plugins/terminal/frontend
 plugins/terminal/libraries
@@ -1825,7 +1865,6 @@ python/common
 python/conda
 python/conda/common
 python/conda/frontend
-python/huggingFace
 python/ide-common/ide-customization
 python/ide/customization.backend
 python/ide/customization.frontend
@@ -1879,6 +1918,8 @@ python/python-poetry/common
 python/python-poetry/frontend
 python/python-process-output/common
 python/python-process-output/frontend
+python/python-process-output/lambdaTests
+python/python-process-output/lambdaTests/intellij.python.processOutput.lambdaTests.plugin
 python/python-psi-api
 python/python-psi-impl
 python/python-pyproject
@@ -1907,6 +1948,8 @@ python/python-sdk/frontend
 python/python-sdk/tests
 python/python-syntax
 python/python-syntax-core
+python/python-syntax/lambdaTests
+python/python-syntax/lambdaTests/intellij.python.syntax.lambdaTests.plugin
 python/python-test-env/common
 python/python-test-env/conda
 python/python-test-env/core
@@ -1927,6 +1970,9 @@ python/python-uv/tests
 python/python-venv
 python/python-venv/common
 python/python-venv/frontend
+python/python-zuban
+python/python-zuban/common
+python/python-zuban/frontend
 python/services/internal-impl
 python/services/shared
 python/services/system-python
@@ -1966,6 +2012,7 @@ tools/intellij.tools.ide.starter.product.gateway
 tools/intellij.tools.ide.starter.product.goland
 tools/intellij.tools.ide.starter.product.idea.community
 tools/intellij.tools.ide.starter.product.idea.ultimate
+tools/intellij.tools.ide.starter.product.jetbrains.light
 tools/intellij.tools.ide.starter.product.phpstorm
 tools/intellij.tools.ide.starter.product.pycharm
 tools/intellij.tools.ide.starter.product.pycharm.community
@@ -2007,6 +2054,7 @@ xml/xml-analysis-impl
 xml/xml-parser
 xml/xml-psi-api
 xml/xml-psi-impl
+xml/xml-psi-impl/regexp
 xml/xml-structure-view-api
 xml/xml-structure-view-impl
 xml/xml-syntax

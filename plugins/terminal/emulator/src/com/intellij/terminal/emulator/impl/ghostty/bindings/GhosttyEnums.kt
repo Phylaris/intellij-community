@@ -116,6 +116,8 @@ internal enum class GhosttyTerminalData(val code: Int) {
   CURSOR_Y(4),
   ACTIVE_SCREEN(6),
   CURSOR_VISIBLE(7),
+  /** Reads a `uint8_t` bitmask of `GHOSTTY_KITTY_KEY_*`, the Kitty keyboard protocol flags in effect. */
+  KITTY_KEYBOARD_FLAGS(8),
   MOUSE_TRACKING(11),
   TITLE(12),
   SCROLLBACK_ROWS(15),
@@ -183,17 +185,7 @@ internal enum class GhosttyTerminalOption(val code: Int) {
   SCROLLBACK_MAX_BYTES(27),
   PROGRESS_REPORT(30),
   TERMINFO_NAME(37),
-  RESIZE_SCROLLBACK_PULL(40),
-}
-
-/**
- * `GhosttyTerminalScrollbackPull` (terminal.h) — value for
- * [GhosttyTerminalOption.RESIZE_SCROLLBACK_PULL].
- */
-internal enum class GhosttyTerminalScrollbackPull(val code: Int) {
-  ALWAYS(0),
-  CURSOR_AT_BOTTOM(1),
-  NEVER(2),
+  RESIZE_PULL_SCROLLBACK(40),
 }
 
 /** `GhosttyTerminalProgressState` (terminal.h) — the state of an `OSC 9;4` progress report. */
@@ -354,6 +346,27 @@ internal enum class GhosttyMouseButton(val code: Int) {
   MIDDLE(3),
   FOUR(4),
   FIVE(5),
+}
+
+/** `GhosttyKeyEncoderOption` (key/encoder.h) — key for `ghostty_key_encoder_setopt`. */
+@Suppress("unused") // the complete option set is the API, referenced or not
+internal enum class GhosttyKeyEncoderOption(val code: Int) {
+  CURSOR_KEY_APPLICATION(0),
+  KEYPAD_KEY_APPLICATION(1),
+  IGNORE_KEYPAD_WITH_NUMLOCK(2),
+  ALT_ESC_PREFIX(3),
+  MODIFY_OTHER_KEYS_STATE_2(4),
+  KITTY_FLAGS(5),
+  MACOS_OPTION_AS_ALT(6),
+  BACKARROW_KEY_MODE(7),
+}
+
+/** `GhosttyOptionAsAlt` (key/encoder.h) — the C `int` value of [GhosttyKeyEncoderOption.MACOS_OPTION_AS_ALT]. */
+internal enum class GhosttyOptionAsAlt(val code: Int) {
+  FALSE(0),
+  TRUE(1),
+  LEFT(2),
+  RIGHT(3),
 }
 
 /** `GhosttyMouseEncoderOption` (mouse/encoder.h) — key for `ghostty_mouse_encoder_setopt`. */

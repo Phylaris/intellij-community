@@ -4,10 +4,11 @@
 
 use std::borrow::Cow;
 use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+
+use anyhow::{Context as _, Result, anyhow, bail};
 
 use crate::INDEX_FILE_NAME;
-use crate::error::{IoContext, Result, bail, invalid};
 use crate::writer::{CENTRAL_HEADER_SIZE, LOCAL_HEADER_SIZE};
 
 const EOCD_SIGNATURE: u32 = 0x0605_4b50;
@@ -20,7 +21,7 @@ const MAX_COMMENT_BYTES: usize = 1 << 16;
 
 /// A source jar opened for reading, with its central directory.
 ///
-/// The central directory is parsed by hand, as the Go reader did, and not with the `zip` crate, for three reasons:
+/// [`Jar::open`] parses the central directory by hand and does not use the `zip` crate, for three reasons:
 ///
 /// - The IKV key is the hash of the *raw name bytes* of an entry.
 /// - The data offset comes from the extra-field length of the *local* header. Jars from other tools can have a local
@@ -29,10 +30,9 @@ const MAX_COMMENT_BYTES: usize = 1 << 16;
 ///   of the last. The merge must write the first and report the second as a duplicate.
 ///
 /// The jar is mapped on a unix host, so a local header and a STORED entry are memory reads, not a `pread` per entry.
-/// Other hosts read the file into the heap, as the Go `mmapfile` fallback did. Nothing is read through the file
-/// afterwards, so the file handle is closed when `open` returns.
+/// Other hosts read the file into the heap. Nothing is read through the file afterwards, so the file handle is closed
+/// when `open` returns.
 pub struct Jar {
-    path: PathBuf,
     data: Contents,
     /// The names of all kept entries, one after the other. Each [`RawEntry`] holds its range.
     names: String,
@@ -86,16 +86,7 @@ impl Jar {
     pub fn open(path: &Path) -> Result<Self> {
         let data = read_contents(path)?;
         let (names, entries) = parse(path, data.bytes())?;
-        Ok(Self {
-            path: path.to_path_buf(),
-            data,
-            names,
-            entries,
-        })
-    }
-
-    pub fn path(&self) -> &Path {
-        &self.path
+        Ok(Self { data, names, entries })
     }
 
     pub fn entries(&self) -> impl ExactSizeIterator<Item = Entry<'_>> + '_ {
@@ -142,7 +133,7 @@ impl Jar {
                 let mut out = Vec::with_capacity(entry.size as usize);
                 flate2::bufread::DeflateDecoder::new(compressed)
                     .read_to_end(&mut out)
-                    .map_err(|error| invalid!("{}: inflating: {error}", entry.name))?;
+                    .map_err(|error| anyhow!("{}: inflating: {error}", entry.name))?;
                 Ok(Cow::Owned(out))
             }
             method => bail!("{}: unsupported compression method {method}", entry.name),
@@ -152,16 +143,16 @@ impl Jar {
 
 #[cfg(unix)]
 fn read_contents(path: &Path) -> Result<Contents> {
-    let file = std::fs::File::open(path).at(path)?;
+    let file = std::fs::File::open(path).with_context(|| path.display().to_string())?;
     // SAFETY: the map is read-only, and the packer only reads action inputs, which no process writes during the action.
-    // The Go reader mapped the file under the same condition.
-    let map = unsafe { memmap2::Mmap::map(&file) }.map_err(|error| invalid!("{}: mmap: {error}", path.display()))?;
+    // The former reader mapped the file under the same condition.
+    let map = unsafe { memmap2::Mmap::map(&file) }.map_err(|error| anyhow!("{}: mmap: {error}", path.display()))?;
     Ok(Contents::Mapped(map))
 }
 
 #[cfg(not(unix))]
 fn read_contents(path: &Path) -> Result<Contents> {
-    Ok(Contents::Heap(std::fs::read(path).at(path)?))
+    Ok(Contents::Heap(std::fs::read(path).with_context(|| path.display().to_string())?))
 }
 
 #[expect(
@@ -258,3 +249,6 @@ const fn u16_at(data: &[u8], at: usize) -> u16 {
 const fn u32_at(data: &[u8], at: usize) -> u32 {
     u32::from_le_bytes([data[at], data[at + 1], data[at + 2], data[at + 3]])
 }
+
+#[cfg(test)]
+mod tests;

@@ -1,5 +1,5 @@
 // Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
-@file:OptIn(FlowPreview::class)
+@file:OptIn(FlowPreview::class, ExperimentalAtomicApi::class)
 package com.intellij.platform.projectView.pane
 
 import com.intellij.codeWithMe.ClientId
@@ -12,6 +12,7 @@ import com.intellij.openapi.options.advanced.AdvancedSettingsChangeListener
 import com.intellij.openapi.project.Project
 import com.intellij.platform.projectView.actions.EditorChoice
 import com.intellij.platform.projectView.actions.fromDTO
+import com.intellij.platform.projectView.runSafelyCancellable
 import com.intellij.platform.projectView.settings.ProjectViewPaneFileNestingValueImpl
 import com.intellij.platform.projectView.settings.toSettingValue
 import kotlinx.coroutines.CompletableDeferred
@@ -43,6 +44,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 import org.jetbrains.annotations.ApiStatus
 import java.util.concurrent.CancellationException
 import java.util.concurrent.CopyOnWriteArraySet
+import kotlin.concurrent.atomics.AtomicReference
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.time.Duration.Companion.seconds
 
 @ApiStatus.Internal
@@ -84,6 +87,8 @@ abstract class ProjectViewPaneServiceBase(
 
   /** `null` until the first set of panes has been computed, to tell "not ready yet" from "no panes at all". */
   private val managers = MutableStateFlow<Map<ProjectViewPaneId, ProjectViewPaneManager>?>(null)
+  
+  private val selectedPaneId = AtomicReference<ProjectViewPaneId?>(null)
 
   private suspend fun describe(pane: ProjectViewPaneModel): ProjectViewPaneDescriptorImpl {
     val builder = ProjectViewPaneDescriptorBuilderImpl()
@@ -131,7 +136,9 @@ abstract class ProjectViewPaneServiceBase(
           currentManagersById[id] = existingManagerJob.manager
           continue
         }
-        val manager = ProjectViewPaneManager(pane, descriptor)
+        val manager = ProjectViewPaneManager(pane, descriptor, selectedCallback = {
+          selectedPaneId.store(id)
+        })
         currentManagersById[manager.id] = manager
         val job = managementScope.launch(CoroutineName("$debugName: pane $id")) {
           manager.manage()
@@ -174,9 +181,17 @@ abstract class ProjectViewPaneServiceBase(
   override suspend fun getPaneStateFlow(paneId: ProjectViewPaneId): Flow<ProjectViewPaneStateEvent>? {
     return awaitManager(paneId)?.getPaneStateFlow()
   }
+  
+  fun getPaneDescriptors(): List<ProjectViewPaneDescriptorImpl> {
+    return managers.value?.values?.map { it.descriptor } ?: emptyList()
+  }
 
   fun getPane(paneId: ProjectViewPaneId): ProjectViewPaneModel? {
     return managers.value?.get(paneId)?.pane
+  }
+  
+  fun isPaneSelected(paneId: ProjectViewPaneId): Boolean {
+    return selectedPaneId.load() == paneId
   }
 
   override suspend fun findNodeForOpenedFile(paneId: ProjectViewPaneId, editorChoice: EditorChoice, isInvokedManually: Boolean): ProjectViewNodePath? {
@@ -198,9 +213,20 @@ abstract class ProjectViewPaneServiceBase(
       manager.pane.findNodeForSelectIn(selectInRequest)
     }
   }
+
+  suspend fun selectNode(nodePath: ProjectViewNodePath, options: ((SelectInProjectViewRequestBuilder) -> Unit)? = null) {
+    val manager = managers.value?.get(nodePath.paneId) ?: return
+    manager.withPaneActive { 
+      manager.selectNode(nodePath, options)
+    }
+  }
 }
 
-private class ProjectViewPaneManager(val pane: ProjectViewPaneModel, val descriptor: ProjectViewPaneDescriptorImpl) {
+private class ProjectViewPaneManager(
+  val pane: ProjectViewPaneModel,
+  val descriptor: ProjectViewPaneDescriptorImpl,
+  val selectedCallback: () -> Unit,
+) {
   val id: ProjectViewPaneId
     get() = descriptor.id
 
@@ -218,38 +244,38 @@ private class ProjectViewPaneManager(val pane: ProjectViewPaneModel, val descrip
           .distinctUntilChanged() // filter out quick reconnects
           .collectLatest { isActive ->
             if (isActive) {
-              try {
-                LOG.debug { "The pane $id became active, managing its state..." }
-                pane.manageState(stateBuilder)
-              }
-              catch (e: Exception) {
-                rethrowControlFlowException(e)
-                LOG.error("The pane $id crashed", e)
-              }
-              finally {
-                LOG.debug { "The pane $id became inactive, clearing its state..." }
-                withContext(NonCancellable) {
-                  stateBuilder.clear()
+              runSafelyCancellable(LOG, taskDescription = { "managing the state of the pane $id" }) {
+                try {
+                  LOG.debug { "The pane $id became active, managing its state..." }
+                  pane.manageState(stateBuilder)
+                }
+                finally {
+                  LOG.debug { "The pane $id became inactive, clearing its state..." }
+                  withContext(NonCancellable) {
+                    stateBuilder.clear()
+                  }
                 }
               }
             }
           }
       }
       launch(CoroutineName("External settings updates for PV pane $id")) {
-        val refresh = Channel<Unit>(capacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
-        ApplicationManager.getApplication().messageBus.connect(this)
-          .subscribe(
-            AdvancedSettingsChangeListener.TOPIC,
-            object : AdvancedSettingsChangeListener {
-              override fun advancedSettingChanged(id: String, oldValue: Any, newValue: Any) {
-                if (id == "project.view.do.not.autoscroll.to.libraries") {
-                  refresh.trySend(Unit)
+        runSafelyCancellable(LOG, taskDescription = { "subscription for external setting changes for the pane $id" }) {
+          val refresh = Channel<Unit>(capacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+          ApplicationManager.getApplication().messageBus.connect(this)
+            .subscribe(
+              AdvancedSettingsChangeListener.TOPIC,
+              object : AdvancedSettingsChangeListener {
+                override fun advancedSettingChanged(id: String, oldValue: Any, newValue: Any) {
+                  if (id == "project.view.do.not.autoscroll.to.libraries") {
+                    refresh.trySend(Unit)
+                  }
                 }
               }
-            }
-          )
-        refresh.consumeAsFlow().collect { 
-          pane.refreshSettings()
+            )
+          refresh.consumeAsFlow().collect { 
+            pane.refreshSettings()
+          }
         }
       }
     }
@@ -300,7 +326,13 @@ private class ProjectViewPaneManager(val pane: ProjectViewPaneModel, val descrip
       try {
         when (request) {
           is ProjectViewPaneLoadChildrenRequest -> pane.loadChildren(request.nodeId, ProjectViewPaneLoadChildrenOptionsImpl)
-          is ProjectViewPaneSelectionChanged -> pane.setPaneSelected(request.paneId == id, ProjectViewPaneSelectionOptionsImpl)
+          is ProjectViewPaneSelectionChanged -> {
+            val isSelected = request.paneId == id
+            pane.setPaneSelected(isSelected, ProjectViewPaneSelectionOptionsImpl)
+            if (isSelected) {
+              selectedCallback()
+            }
+          }
           is ProjectViewPaneNavigateRequest -> pane.navigate(request.nodeId, ProjectViewPaneNavigateOptionsImpl(request.requestFocus))
           is ProjectViewPaneChangeOptionValueRequest -> pane.setOptionValue(request.option.fromDTO(), request.newValue)
           is ProjectViewPaneChangeSortKeyRequest -> pane.setSortKey(request.sortKey.toSettingValue())
@@ -326,6 +358,10 @@ private class ProjectViewPaneManager(val pane: ProjectViewPaneModel, val descrip
         )
       }
     }
+  }
+
+  suspend fun selectNode(nodePath: ProjectViewNodePath, options: ((SelectInProjectViewRequestBuilder) -> Unit)? = null) {
+    stateBuilder.selectNode(nodePath, options)
   }
 }
 

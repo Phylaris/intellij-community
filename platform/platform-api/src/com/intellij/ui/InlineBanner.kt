@@ -201,13 +201,14 @@ open class InlineBanner private constructor(
     return label
   }
 
-  // Todo rename
   @ApiStatus.Internal
-  fun addDefaultButtonAction(name: @Nls String, default: Boolean = true, action: Runnable): JButton {
-    val button = object : JButton(name) {
-      override fun isDefaultButton() = default
-    }
+  fun addButtonAction(name: @Nls String, action: Runnable): JButton {
+    val button = JButton(name)
     button.isOpaque = false
+    button.putClientProperty("JButton.backgroundColor", Gray.TRANSPARENT)
+    button.putClientProperty("JButton.paintShadow", false) // The background is transparent, so the shadow would be disabled
+    button.putClientProperty("JButton.borderColor", JBColor.namedColor(
+      "Notification.Button.borderColor", JBUI.CurrentTheme.Button.buttonOutlineColorStart(false)))
     button.addActionListener {
       action.run()
     }

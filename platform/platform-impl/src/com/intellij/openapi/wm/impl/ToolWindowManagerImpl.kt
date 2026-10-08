@@ -60,6 +60,7 @@ import com.intellij.openapi.wm.ex.ToolWindowManagerEx
 import com.intellij.openapi.wm.ex.ToolWindowManagerListener
 import com.intellij.openapi.wm.ex.ToolWindowManagerListener.ToolWindowManagerEventType
 import com.intellij.openapi.wm.safeToolWindowPaneId
+import com.intellij.platform.ide.diagnostic.startUpPerformanceReporter.FUSProjectHotStartUpMeasurer
 import com.intellij.platform.ide.progress.runWithModalProgressBlocking
 import com.intellij.serviceContainer.NonInjectable
 import com.intellij.toolWindow.InternalDecoratorImpl
@@ -72,6 +73,7 @@ import com.intellij.toolWindow.ToolWindowEntry
 import com.intellij.toolWindow.ToolWindowEventSource
 import com.intellij.toolWindow.ToolWindowPane
 import com.intellij.toolWindow.ToolWindowPaneNewButtonManager
+import com.intellij.toolWindow.ToolWindowPaneOldButtonManager
 import com.intellij.toolWindow.ToolWindowProperty
 import com.intellij.toolWindow.ToolWindowSetInitializer
 import com.intellij.toolWindow.ToolWindowStripeManager
@@ -114,7 +116,9 @@ import java.util.function.Supplier
 import javax.swing.Icon
 import javax.swing.JComponent
 import javax.swing.JFrame
+import javax.swing.JPanel
 import javax.swing.JRootPane
+import kotlin.coroutines.EmptyCoroutineContext
 
 private val LOG = logger<ToolWindowManagerImpl>()
 private val performShowInSeparateTask = System.getProperty("idea.toolwindow.show.separate.task", "false").toBoolean()
@@ -217,6 +221,43 @@ open class ToolWindowManagerImpl @NonInjectable @TestOnly internal constructor(
      */
     @JvmField
     val PARENT_COMPONENT: Key<JComponent> = Key.create("tool.window.parent.component")
+
+    /**
+     * Registers the tool window [toolWindowId] with [component] in a new tool window manager of [project].
+     * The manager uses the old stripe buttons and the default layout, and [disposable] disposes it.
+     */
+    @TestOnly
+    @ApiStatus.Internal
+    fun registerLocalToolWindowForTest(
+      project: Project,
+      toolWindowId: String,
+      disposable: Disposable,
+      component: JComponent = JPanel(),
+    ): ToolWindowImpl {
+      val paneId = WINDOW_INFO_DEFAULT_TOOL_WINDOW_PANE_ID
+      val buttonManager = ToolWindowPaneOldButtonManager(paneId)
+      val manager = object : ToolWindowManagerImpl(
+        project = project,
+        isNewUi = false,
+        isEdtRequired = false,
+        coroutineScope = (project as ComponentManagerEx).getCoroutineScope(),
+      ) {
+        override fun getButtonManager(toolWindow: ToolWindow): ToolWindowButtonManager = buttonManager
+      }
+
+      val layoutManager = ToolWindowDefaultLayoutManager(isNewUi = false)
+      layoutManager.noStateLoaded()
+      manager.setLayoutOnInit(layoutManager.getLayoutCopy())
+      Disposer.register(disposable, manager)
+
+      return manager.registerToolWindow(
+        task = RegisterToolWindowTaskData(
+          id = toolWindowId,
+          component = component,
+        ),
+        buttonManager = buttonManager,
+      ).toolWindow
+    }
 
     @JvmStatic
     @ApiStatus.Internal
@@ -393,11 +434,16 @@ open class ToolWindowManagerImpl @NonInjectable @TestOnly internal constructor(
     }
   }
 
+  /**
+   * [onDefaultPaneToolWindowsRegistered] runs once on the EDT after the tool windows of the default pane are registered.
+   * At this time, [invokeLater] still puts a task in the queue of the pending tasks.
+   */
   internal suspend fun init(
     pane: ToolWindowPane,
     reopeningEditorJob: Job,
     taskListDeferred: Deferred<List<RegisterToolWindowTaskData>>,
     projectFrameTypeId: String? = null,
+    onDefaultPaneToolWindowsRegistered: (() -> Unit)? = null,
   ) {
     this.projectFrameTypeId = projectFrameTypeId
     doInit(
@@ -406,6 +452,7 @@ open class ToolWindowManagerImpl @NonInjectable @TestOnly internal constructor(
       reopeningEditorJob = reopeningEditorJob,
       taskListDeferred = taskListDeferred,
       projectFrameTypeId = projectFrameTypeId,
+      onDefaultPaneToolWindowsRegistered = onDefaultPaneToolWindowsRegistered,
     )
   }
 
@@ -417,6 +464,7 @@ open class ToolWindowManagerImpl @NonInjectable @TestOnly internal constructor(
     reopeningEditorJob: Job,
     taskListDeferred: Deferred<List<RegisterToolWindowTaskData>>?,
     projectFrameTypeId: String? = this.projectFrameTypeId,
+    onDefaultPaneToolWindowsRegistered: (() -> Unit)? = null,
   ) {
     this.projectFrameTypeId = projectFrameTypeId
 
@@ -450,7 +498,11 @@ open class ToolWindowManagerImpl @NonInjectable @TestOnly internal constructor(
         toolWindowPanes.put(pane.paneId, pane)
       }
       defaultPaneInitialization.join()
-      toolWindowSetInitializer.initUi(reopeningEditorJob, taskListDeferred)
+      toolWindowSetInitializer.initUi(
+        reopeningEditorJob = reopeningEditorJob,
+        taskListDeferred = taskListDeferred,
+        onDefaultPaneToolWindowsRegistered = onDefaultPaneToolWindowsRegistered,
+      )
     }
 
     connection.subscribe(FileEditorManagerListener.FILE_EDITOR_MANAGER, object : FileEditorManagerListener {
@@ -1485,7 +1537,8 @@ open class ToolWindowManagerImpl @NonInjectable @TestOnly internal constructor(
 
   override fun invokeLater(runnable: Runnable) {
     if (!toolWindowSetInitializer.addToPendingTasksIfNotInitialized(runnable)) {
-      coroutineScope.launch(Dispatchers.UiWithModelAccess + ModalityState.nonModal().asContextElement()) {
+      val startUpContextElement = FUSProjectHotStartUpMeasurer.getStartUpContextElementToPass() ?: EmptyCoroutineContext
+      coroutineScope.launch(Dispatchers.UiWithModelAccess + ModalityState.nonModal().asContextElement() + startUpContextElement) {
         runnable.run()
       }
     }

@@ -6,6 +6,7 @@ import com.intellij.markdown.backend.editor.livepreview.computeLivePreviewSpecs
 import com.intellij.openapi.editor.ex.DocumentEx
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import org.intellij.plugins.markdown.MarkdownBundle
+import org.intellij.plugins.markdown.editor.livepreview.MarkdownLivePreviewSpec.AlertType
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 
@@ -109,8 +110,17 @@ class MarkdownLivePreviewSpecTest : BasePlatformTestCase() {
     assertEquals("file:///project/image.png", image.destination)
   }
 
-  fun testReferenceLinksAreNotConcealed() {
-    assertEmpty(concealed("[text][label] and [label]\n\n[label]: https://example.org"))
+  fun testReferenceLinksAreConcealed() {
+    val content = """
+      |[Markdown Guide][docs] [IntelliJ IDEA][] [GitHub]
+      |
+      |[docs]: https://example.org
+      |[IntelliJ IDEA]: https://www.jetbrains.com/idea/
+      |[GitHub]: https://github.com
+    """.trimMargin()
+
+    assertEquals(listOf("[", "][docs]", "[", "][]", "[", "]"), concealed(content))
+    assertEquals(listOf("[Markdown Guide][docs]", "[IntelliJ IDEA][]", "[GitHub]"), revealRanges(content))
   }
 
   fun testCodeFenceContentIsNotConcealed() {
@@ -215,6 +225,37 @@ class MarkdownLivePreviewSpecTest : BasePlatformTestCase() {
     assertEquals(headings("# Hello **big**").single().html, headings("some text\n\n# Hello **big**").single().html)
   }
 
+  fun testSetextHeadingsCoverTheirContentLineAndRulesCoverTheirUnderlines() {
+    val content = "One\n===\n\nTwo\n---\n\nThree *text*\n====="
+    val headings = headings(content)
+    val rules = elements(content).filterIsInstance<MarkdownLivePreviewSpec.HorizontalRule>()
+
+    assertEquals(listOf(1, 2, 1), headings.map { it.level })
+    assertEquals(listOf("One", "Two", "Three *text*"), headings.map { content.substring(it.range.startOffset, it.range.endOffset) })
+    assertEquals(listOf("One", "Two", "Three text"), headings.map { it.body().text() })
+    assertEquals(listOf("===", "---", "====="), rules.map { content.substring(it.range.startOffset, it.range.endOffset) })
+  }
+
+  /** The parser takes only one line before the underline. If it learns more, the heading spec must cover all those lines. */
+  fun testMultiLineSetextContentIsNotAHeading() {
+    assertEmpty(headings("Multi\nline\n====="))
+    assertEmpty(headings("Multi\nline\n-----"))
+  }
+
+  fun testSetextHeadingSpansCoverTheirSource() {
+    val content = "before\n\n  Hello **big** (world)\n---"
+    val heading = headings(content).single()
+    val lines = content.substring(heading.range.startOffset, heading.range.endOffset)
+    val spans = heading.body().select("span[md-src-pos]")
+
+    assertEquals("  Hello **big** (world)", lines)
+    assertEquals("Hello big (world)", spans.joinToString("") { it.wholeText() }.trim())
+    for (span in spans) {
+      val (start, end) = span.attr("md-src-pos").split("..").map(String::toInt)
+      assertEquals(span.toString(), span.wholeText(), lines.substring(start, end))
+    }
+  }
+
   fun testNestedAndUnsupportedHeadingsAreNotReported() {
     val content = """
       |- # list heading
@@ -226,8 +267,8 @@ class MarkdownLivePreviewSpecTest : BasePlatformTestCase() {
       |#### html heading
       |</section>
       |
-      |Setext heading
-      |--------------
+      |> Quoted setext heading
+      |> ---------------------
       |
       |####### too deep
       |
@@ -322,7 +363,7 @@ class MarkdownLivePreviewSpecTest : BasePlatformTestCase() {
 
   fun testBlockquoteRuleCoversLazyContinuationLines() {
     val content = "> first\nlazy\n> third"
-    assertEquals(listOf("> first\nlazy\n", "> third"), ruleSegments(content))
+    assertEquals(listOf("> first", "> third"), ruleSegments(content))
   }
 
   fun testBlockquoteRulesInsideListItemsCoverTheirLines() {
@@ -358,6 +399,11 @@ class MarkdownLivePreviewSpecTest : BasePlatformTestCase() {
     val content = "- > first\n  > second\n  > third"
     assertEquals(listOf("-", ">", ">", ">"), concealed(content))
     assertEquals(listOf("-", ">", ">", ">"), revealRanges(content))
+  }
+
+  fun testBlockquoteMarkersAfterTaskCheckboxesAreConcealed() {
+    val content = "- [ ] > first\n  > second"
+    assertEquals(listOf("- [ ]", ">", ">"), concealed(content))
   }
 
   fun testBlockquoteMarkersInsidePlusListItemsAreConcealed() {
@@ -405,6 +451,23 @@ class MarkdownLivePreviewSpecTest : BasePlatformTestCase() {
     assertEquals(listOf(">", ">", ">", ">", ">"), concealed(content))
     assertEquals(listOf("> > first\n", "> first", ">\n", "> > second", "> second"), ruleSegments(content))
     assertEquals(listOf("> >", "> >", ">", "> >", "> >"), revealRanges(content))
+  }
+
+  fun testAlertsConcealTheirMarkersAndTitleBrackets() {
+    val content = "> [!NOTE]\n> text"
+    assertEquals(listOf(">", "[!", "]", ">"), concealed(content))
+    assertEquals(listOf(">", "[!NOTE]", ">"), revealRanges(content))
+    assertEquals(listOf("> [!NOTE]\n", "> text"), ruleSegments(content))
+    assertEquals(listOf(AlertType.NOTE, AlertType.NOTE), blockQuotes(content).map { it.alertType })
+  }
+
+  fun testQuoteInsideAnAlertHasNoAlertType() {
+    val content = "> [!CAUTION]\n> > nested"
+    assertEquals(listOf(AlertType.CAUTION, AlertType.CAUTION, null), blockQuotes(content).map { it.alertType })
+  }
+
+  fun testUnknownAlertTitleHasNoAlertType() {
+    assertEquals(listOf(null), blockQuotes("> [!UNKNOWN]").map { it.alertType })
   }
 
   fun testTaskExamplesOutsideListsAreNotCheckboxes() {

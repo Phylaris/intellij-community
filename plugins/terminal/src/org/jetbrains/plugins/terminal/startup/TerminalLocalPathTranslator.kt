@@ -1,6 +1,7 @@
 // Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.plugins.terminal.startup
 
+import com.intellij.execution.wsl.EelDescriptorWithWslDistribution
 import com.intellij.execution.wsl.WslPath
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.diagnostic.debug
@@ -8,13 +9,13 @@ import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.util.io.OSAgnosticPathUtil
 import com.intellij.platform.eel.EelDescriptor
 import com.intellij.platform.eel.EelPathBoundDescriptor
-import com.intellij.platform.eel.annotations.MultiRoutingFileSystemPath
-import com.intellij.platform.eel.annotations.NativePath
 import com.intellij.platform.eel.path.EelPath
 import com.intellij.platform.eel.path.EelPathException
 import com.intellij.platform.eel.pathSeparator
 import com.intellij.platform.eel.provider.LocalEelDescriptor
 import com.intellij.platform.eel.provider.asEelPath
+import com.intellij.platform.util.annotations.paths.NioPath
+import com.intellij.platform.util.annotations.paths.OsPath
 import com.intellij.util.PathUtil
 import com.intellij.util.asSafely
 import org.jetbrains.annotations.ApiStatus
@@ -81,7 +82,7 @@ class TerminalLocalPathTranslator(private val descriptor: EelDescriptor) {
    * @return The translated native path within [descriptor], or `null` if
    *         [absolutePathString] is not absolute, or it cannot be translated.
    */
-  fun translateAbsoluteLocalPathStringToRemote(absolutePathString: @MultiRoutingFileSystemPath String): @NativePath String? {
+  fun translateAbsoluteLocalPathStringToRemote(absolutePathString: @NioPath String): @OsPath String? {
     if (absolutePathString.isBlank()) return null
     val path: Path = try {
       Path.of(absolutePathString)
@@ -100,7 +101,7 @@ class TerminalLocalPathTranslator(private val descriptor: EelDescriptor) {
    * @return The translated [EelPath] representing the native path within [descriptor], or `null` if
    *         [absolutePath] is not absolute, or it cannot be translated.
    */
-  fun translateAbsoluteLocalPathToRemote(absolutePath: @MultiRoutingFileSystemPath Path): EelPath? {
+  fun translateAbsoluteLocalPathToRemote(absolutePath: Path): EelPath? {
     if (!absolutePath.isAbsolute) {
       LOG.debug { "Failed to translate not absolute $absolutePath, skipping" }
       return null
@@ -192,9 +193,7 @@ class TerminalLocalPathTranslator(private val descriptor: EelDescriptor) {
   }
 
   private fun asWslEelDescriptorSafely(): EelPathBoundDescriptor? {
-    return descriptor.asSafely<EelPathBoundDescriptor>()?.takeIf {
-      it::class.java.name == "com.intellij.platform.ide.impl.wsl.WslEelDescriptor"
-    }
+    return descriptor.asSafely<EelPathBoundDescriptor>()?.takeIf { it is EelDescriptorWithWslDistribution }
   }
 
   internal fun joinEntries(entriesLeft: String, entriesRight: String): String {

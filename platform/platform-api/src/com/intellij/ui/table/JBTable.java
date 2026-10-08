@@ -11,6 +11,7 @@ import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.wm.IdeFocusManager;
 import com.intellij.ui.CellRendererPanel;
+import com.intellij.ui.ColorUtil;
 import com.intellij.ui.ComponentUtil;
 import com.intellij.ui.ComponentWithExpandableItems;
 import com.intellij.ui.ExpandableItemsHandler;
@@ -813,13 +814,15 @@ public class JBTable extends JTable implements ComponentWithEmptyText, Component
       else {
         Color hovered = isHoverPaintingDisabled(this) || isHoverPaintingDisabled(component) ? null : getHoveredRowBackground();
         if (hovered != null) {
+          // a translucent color must be painted only once, but renderers may contain nested opaque components
+          Color opaqueHovered = hovered.getAlpha() < 255 ? ColorUtil.alphaBlending(hovered, getBackground()) : hovered;
           if (row == TableHoverListener.getHoveredRow(this)) {
-            setRendererBackground(component, hovered);
+            setRendererBackground(component, opaqueHovered);
           }
           else {
             forEachComponent(component, child -> {
               // reset hovered background only if it was not cleared properly
-              if (hovered == child.getBackground()) child.setBackground(getBackground());
+              if (opaqueHovered.equals(child.getBackground())) child.setBackground(getBackground());
             });
           }
         }
@@ -1568,6 +1571,16 @@ public class JBTable extends JTable implements ComponentWithEmptyText, Component
         return JBTable.this
           .getCellRenderer(myRow, myColumn)
           .getTableCellRendererComponent(JBTable.this, getValueAt(myRow, myColumn), false, false, myRow, myColumn);
+      }
+
+      @Override
+      public boolean isVisible() {
+        // Cells outside the visible area are reported as invisible without creating the renderer component,
+        // which can be expensive and would otherwise be done for every cell of the table (e.g., for visible children query)
+        if (!JBTable.this.getVisibleRect().intersects(JBTable.this.getCellRect(myRow, myColumn, false))) {
+          return false;
+        }
+        return super.isVisible();
       }
 
       @Override

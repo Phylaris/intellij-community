@@ -2,7 +2,6 @@
     "version": 2,
     "plugin": "intellij.android.plugin.descriptor",
     "variant": "windows_x64",
-    "layoutSignature": "2c97kdr1q9j4cvzu06rwpvfrr",
     "assets": [
         {
             "destination": "lib/intellij.libraries.ffmpeg.jar",
@@ -874,6 +873,21 @@
             }
         },
         {
+            "destination": "lib/resources/androidAnnotations.jar",
+            "recipe": {
+                "sources": [
+                    {
+                        "input": "intellij.android.externalAnnotations",
+                        "kind": "module",
+                        "filter": "module-v1"
+                    }
+                ],
+                "writer": {
+                    "mergeEntities": true
+                }
+            }
+        },
+        {
             "destination": "lib/ffmpeg-6.0-1.5.9.jar",
             "recipe": {
                 "sources": [
@@ -953,7 +967,7 @@
             "recipe": {
                 "sources": [
                     {
-                        "input": "@community//android/android/lib:android-core-instantapps-api",
+                        "input": "//android/android/lib:android-core-instantapps-api",
                         "kind": "library",
                         "filter": "library-v1"
                     }
@@ -1039,22 +1053,6 @@
             }
         },
         {
-            "destination": "resources/androidAnnotations.jar",
-            "recipe": {
-                "sources": [
-                    {
-                        "input": "layout-assets:resource:3:output",
-                        "kind": "prepared",
-                        "filter": "prepared"
-                    }
-                ],
-                "writer": {
-                    "manifest": "drop"
-                }
-            },
-            "classPath": false
-        },
-        {
             "destination": "resources/sampleData",
             "inputs": [
                 "module-resource:0:source"
@@ -1081,7 +1079,7 @@
         {
             "destination": "resources/native/linux",
             "inputs": [
-                "module-resource:4:source"
+                "module-resource:3:source"
             ],
             "kind": "tree",
             "classPath": false
@@ -1089,7 +1087,7 @@
         {
             "destination": "resources/native/mac",
             "inputs": [
-                "module-resource:5:source"
+                "module-resource:4:source"
             ],
             "kind": "tree",
             "classPath": false
@@ -1097,7 +1095,7 @@
         {
             "destination": "resources/native/mac_arm",
             "inputs": [
-                "module-resource:6:source"
+                "module-resource:5:source"
             ],
             "kind": "tree",
             "classPath": false
@@ -1105,7 +1103,7 @@
         {
             "destination": "resources/native/win",
             "inputs": [
-                "module-resource:7:source"
+                "module-resource:6:source"
             ],
             "kind": "tree",
             "classPath": false
@@ -1113,46 +1111,10 @@
         {
             "destination": "resources/images/asset_studio",
             "inputs": [
-                "module-resource:8:source"
+                "module-resource:7:source"
             ],
             "kind": "tree",
             "classPath": false
-        }
-    ],
-    "preparations": [
-        {
-            "id": "layout-assets:resource:3",
-            "inputs": [
-                "module-resource:3:source"
-            ],
-            "outputs": [
-                "layout-assets:resource:3:output"
-            ],
-            "modelSignature": "3w5ya8mxbq1w5lpcx3m8wh6kb"
-        }
-    ],
-    "operations": [
-        {
-            "id": "layout-assets:resource:3",
-            "kind": "layout-assets",
-            "inputs": [
-                {
-                    "artifact": "module-resource:3:source"
-                }
-            ],
-            "output": "layout-assets:resource:3:output",
-            "manifest": "keep",
-            "layoutAssets": {
-                "format": "entries",
-                "assets": [
-                    {
-                        "destination": "",
-                        "sources": [
-                            0
-                        ]
-                    }
-                ]
-            }
         }
     ]
 }

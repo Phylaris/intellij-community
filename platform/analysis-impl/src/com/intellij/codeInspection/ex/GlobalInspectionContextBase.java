@@ -6,6 +6,7 @@ import com.intellij.analysis.AnalysisScope;
 import com.intellij.codeInsight.daemon.impl.DaemonProgressIndicator;
 import com.intellij.codeInspection.GlobalInspectionContext;
 import com.intellij.codeInspection.GlobalInspectionTool;
+import com.intellij.codeInspection.InspectionEP;
 import com.intellij.codeInspection.InspectionManager;
 import com.intellij.codeInspection.InspectionManagerBase;
 import com.intellij.codeInspection.InspectionProfile;
@@ -20,8 +21,11 @@ import com.intellij.codeInspection.reference.RefElementImpl;
 import com.intellij.codeInspection.reference.RefEntity;
 import com.intellij.codeInspection.reference.RefManager;
 import com.intellij.codeInspection.reference.RefManagerImpl;
+import com.intellij.diagnostic.PluginException;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.extensions.PluginId;
 import com.intellij.openapi.progress.EmptyProgressIndicator;
 import com.intellij.openapi.progress.PerformInBackgroundOption;
 import com.intellij.openapi.progress.ProgressIndicator;
@@ -68,6 +72,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
 
@@ -103,6 +108,9 @@ public class GlobalInspectionContextBase extends UserDataHolderBase implements G
 
   /** null means {@link #initializeTools(List, List, List)} wasn't called yet */
   private @Unmodifiable Map<String, Tools> myTools;
+
+  /** Short names of the tools that failed to start in the current run */
+  private final Set<String> myFailedTools = ConcurrentHashMap.newKeySet();
 
   public static final @NonNls String PROBLEMS_TAG_NAME = "problems";
   public static final @NonNls String LOCAL_TOOL_ATTRIBUTE = "is_local_tool";
@@ -159,6 +167,10 @@ public class GlobalInspectionContextBase extends UserDataHolderBase implements G
 
   void cleanupTools() {
     myProgressIndicator.cancel();
+    resetTools();
+  }
+
+  void resetTools() {
     for (GlobalInspectionContextExtension<?> extension : myExtensions.values()) {
       extension.cleanup();
     }
@@ -173,6 +185,7 @@ public class GlobalInspectionContextBase extends UserDataHolderBase implements G
       }
       myTools = null;
     }
+    myFailedTools.clear();
 
     EntryPointsManager entryPointsManager = getProject().isDisposed() ? null : EntryPointsManager.getInstance(getProject());
     if (entryPointsManager != null) {
@@ -182,10 +195,10 @@ public class GlobalInspectionContextBase extends UserDataHolderBase implements G
     if (myRefManager != null) {
       ((RefManagerImpl)myRefManager).cleanup();
       myRefManager = null;
-      if (myCurrentScope != null){
-        myCurrentScope.invalidate();
-        myCurrentScope = null;
-      }
+    }
+    if (myCurrentScope != null) {
+      myCurrentScope.invalidate();
+      myCurrentScope = null;
     }
     myJobDescriptors.clear();
   }
@@ -304,25 +317,41 @@ public class GlobalInspectionContextBase extends UserDataHolderBase implements G
     });
     PsiManager psiManager = PsiManager.getInstance(myProject);
     //init manager in read action
-    ((RefManagerImpl)getRefManager()).runInsideInspectionReadAction(() ->
-      psiManager.runInBatchFilesMode(() -> {
-        try {
-          getStdJobDescriptors().BUILD_GRAPH.setTotalAmount(scope.getFileCount());
-          getStdJobDescriptors().LOCAL_ANALYSIS.setTotalAmount(scope.getFileCount());
-          getStdJobDescriptors().FIND_EXTERNAL_USAGES.setTotalAmount(0);
+    while (true) {
+      ProgressManager.checkCanceled();
+      try {
+        ((RefManagerImpl)getRefManager()).runInsideInspectionReadAction(() ->
+          psiManager.runInBatchFilesMode(() -> {
+            try {
+              getStdJobDescriptors().BUILD_GRAPH.setTotalAmount(scope.getFileCount());
+              getStdJobDescriptors().LOCAL_ANALYSIS.setTotalAmount(scope.getFileCount());
+              getStdJobDescriptors().FIND_EXTERNAL_USAGES.setTotalAmount(0);
 
-          runTools(scope, runGlobalToolsOnly, isOfflineInspections);
-        }
-        catch (IndexNotReadyException e) {
-          throw e;
-        }
-        catch (Throwable e) {
-          rethrowControlFlowException(e);
-          LOG.error(e);
-        }
-        return  null;
-      })
-    );
+              runTools(scope, runGlobalToolsOnly, isOfflineInspections);
+            }
+            catch (IndexNotReadyException e) {
+              throw e;
+            }
+            catch (Throwable e) {
+              rethrowControlFlowException(e);
+              LOG.error(e);
+            }
+            return null;
+          })
+        );
+        return;
+      }
+      catch (ReadAction.CannotReadException e) {
+        if (isOfflineInspections) throw e;
+        ProgressManager.checkCanceled();
+        ApplicationManager.getApplication().invokeAndWait(() -> {
+          resetTools();
+          myCurrentScope = scope;
+          myProgressIndicator.setFraction(0);
+        });
+        ReadAction.nonBlocking(() -> null).withDocumentsCommitted(myProject).inSmartMode(myProject).executeSynchronously();
+      }
+    }
   }
 
   protected void canceled() {
@@ -342,16 +371,22 @@ public class GlobalInspectionContextBase extends UserDataHolderBase implements G
     }
     Map<String, Tools> tools = new HashMap<>(usedTools.size());
     for (Tools currentTools : usedTools) {
-      String shortName = currentTools.getShortName();
-      tools.put(shortName, currentTools);
       InspectionToolWrapper<?,?> toolWrapper = currentTools.getTool();
-      classifyTool(outGlobalTools, outLocalTools, outGlobalSimpleTools, currentTools, toolWrapper);
-
-      for (ScopeToolState state : currentTools.getTools()) {
-        state.getTool().initialize(this);
+      JobDescriptor[] jobDescriptors;
+      try {
+        for (ScopeToolState state : currentTools.getTools()) {
+          state.getTool().initialize(this);
+        }
+        jobDescriptors = toolWrapper.getJobDescriptors(this);
+      }
+      catch (Throwable e) {
+        rethrowControlFlowException(e);
+        reportFailedTool(toolWrapper, e);
+        continue;
       }
 
-      JobDescriptor[] jobDescriptors = toolWrapper.getJobDescriptors(this);
+      tools.put(currentTools.getShortName(), currentTools);
+      classifyTool(outGlobalTools, outLocalTools, outGlobalSimpleTools, currentTools, toolWrapper);
       for (JobDescriptor jobDescriptor : jobDescriptors) {
         appendJobDescriptor(jobDescriptor);
       }
@@ -365,10 +400,21 @@ public class GlobalInspectionContextBase extends UserDataHolderBase implements G
 
   public @NotNull List<Tools> getUsedTools() {
     InspectionProfileImpl profile = getCurrentProfile();
-    List<Tools> tools = profile.getAllEnabledInspectionTools(myProject);
+    List<Tools> enabledTools = profile.getAllEnabledInspectionTools(myProject);
+    List<Tools> tools = new ArrayList<>(enabledTools.size());
     Set<InspectionToolWrapper<?, ?>> dependentTools = new LinkedHashSet<>();
-    for (Tools tool : tools) {
-      profile.collectDependentInspections(tool.getTool(), dependentTools, getProject());
+    for (Tools tool : enabledTools) {
+      InspectionToolWrapper<?, ?> toolWrapper = tool.getTool();
+      try {
+        toolWrapper.getTool();
+      }
+      catch (Throwable e) {
+        rethrowControlFlowException(e);
+        reportFailedTool(toolWrapper, e);
+        continue;
+      }
+      tools.add(tool);
+      profile.collectDependentInspections(toolWrapper, dependentTools, getProject());
     }
 
     if (dependentTools.isEmpty()) {
@@ -378,6 +424,16 @@ public class GlobalInspectionContextBase extends UserDataHolderBase implements G
     set.addAll(tools);
     set.addAll(ContainerUtil.map(dependentTools, toolWrapper -> new ToolsImpl(toolWrapper, toolWrapper.getDefaultLevel(), true, true)));
     return new ArrayList<>(set);
+  }
+
+  private void reportFailedTool(@NotNull InspectionToolWrapper<?, ?> toolWrapper, @NotNull Throwable e) {
+    String shortName = toolWrapper.getShortName();
+    if (!myFailedTools.add(shortName)) {
+      return;
+    }
+    InspectionEP ep = toolWrapper.getExtension();
+    PluginId pluginId = ep == null ? null : ep.getPluginDescriptor().getPluginId();
+    LOG.error(new PluginException("Cannot start inspection '" + shortName + "'. The inspection run skips it.", e, pluginId));
   }
 
   private void appendPairedInspectionsForUnfairTools(@NotNull List<? super Tools> globalTools,

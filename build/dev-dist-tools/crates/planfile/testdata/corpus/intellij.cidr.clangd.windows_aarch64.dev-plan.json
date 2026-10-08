@@ -2,7 +2,6 @@
     "version": 2,
     "plugin": "intellij.cidr.clangd",
     "variant": "windows_aarch64",
-    "layoutSignature": "4d52y2i633kvlhg216y0x45yj",
     "assets": [
         {
             "module": "intellij.cidr.clangd.core"
@@ -64,31 +63,6 @@
             ],
             "kind": "tree",
             "classPath": false
-        }
-    ],
-    "preparations": [
-        {
-            "id": "layout-assets:resource-generator:0",
-            "inputs": [
-                "cidr-dependency:clang:win:x64",
-                "cidr-dependency:clang:wsl:x64",
-                "cidr-dependency:clang:win:aarch64",
-                "cidr-dependency:clang:wsl:aarch64"
-            ],
-            "outputs": [
-                "layout-assets:resource-generator:0:output"
-            ],
-            "modelSignature": "1ww7cpjlut14v4sboytm5fekd"
-        },
-        {
-            "id": "layout-assets:resource-generator:1",
-            "inputs": [
-                "cidr-dependency:clang-clangTidyDoc:any:any"
-            ],
-            "outputs": [
-                "layout-assets:resource-generator:1:output"
-            ],
-            "modelSignature": "5pz833n6f6wzax8pqa7npljjr"
         }
     ],
     "operations": [

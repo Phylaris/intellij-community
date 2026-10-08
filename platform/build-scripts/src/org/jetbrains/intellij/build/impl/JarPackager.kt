@@ -18,7 +18,6 @@ import org.jetbrains.intellij.build.BuildOptions
 import org.jetbrains.intellij.build.BuildPaths
 import org.jetbrains.intellij.build.CompilationContext
 import org.jetbrains.intellij.build.DirSource
-import org.jetbrains.intellij.build.JarPackagerDependencyHelper
 import org.jetbrains.intellij.build.LazySource
 import org.jetbrains.intellij.build.MAVEN_REPO
 import org.jetbrains.intellij.build.NativeFileHandler
@@ -85,6 +84,7 @@ class JarPackager private constructor(
   private val context: BuildContext,
   private val platformLayout: PlatformLayout?,
   @JvmField internal val moduleOutputPatcher: ModuleOutputPatcher,
+  private val dryRun: Boolean,
 ) {
   private val assets = LinkedHashMap<Path, AssetDescriptor>()
 
@@ -94,7 +94,7 @@ class JarPackager private constructor(
 
   companion object {
     fun pack(includedModules: Collection<ModuleItem>, outputDir: Path, context: BuildContext) {
-      val packager = JarPackager(outDir = outputDir, context = context, platformLayout = null, moduleOutputPatcher = ModuleOutputPatcher())
+      val packager = JarPackager(outDir = outputDir, context = context, platformLayout = null, moduleOutputPatcher = ModuleOutputPatcher(), dryRun = false)
       packager.computeModuleSources(includedModules = includedModules, layout = null, searchableOptionSet = null, cachedDescriptorWriterProvider = null)
       buildJars(
         assets = packager.assets.values,
@@ -102,7 +102,6 @@ class JarPackager private constructor(
         isCodesignEnabled = false,
         dryRun = false,
         layout = null,
-        helper = packager.helper,
         context = context
       )
     }
@@ -125,6 +124,7 @@ class JarPackager private constructor(
         context = context,
         platformLayout = platformLayout,
         moduleOutputPatcher = moduleOutputPatcher,
+        dryRun = dryRun,
       )
       packager.computeModuleSources(
         includedModules = includedModules,
@@ -157,13 +157,14 @@ class JarPackager private constructor(
         isCodesignEnabled = isCodesignEnabled,
         dryRun = dryRun,
         layout = layout,
-        helper = packager.helper,
         context = context,
       )
 
       return taskScope {
         if (buildAssetResult.sourceToNativeFiles.isNotEmpty()) {
-          packNativePresignedFiles(nativeFiles = buildAssetResult.sourceToNativeFiles, dryRun = dryRun, context = context)
+          // A plugin keeps the native tree in its own `lib/`, next to the jar that owns it. Platform content keeps it in `lib/`.
+          val libDirPrefix = if (layout is PluginLayout) "$PLUGINS_DIRECTORY/${layout.directoryName}/$LIB_DIRECTORY" else LIB_DIRECTORY
+          packNativePresignedFiles(nativeFiles = buildAssetResult.sourceToNativeFiles, libDirPrefix = libDirPrefix, dryRun = dryRun, context = context)
         }
 
         val list = mutableListOf<DistributionFileEntry>()
@@ -295,7 +296,14 @@ class JarPackager private constructor(
   }
 
   private fun handleCustomAssets(layout: PluginLayout, jarAsset: AssetDescriptor) {
-    for (customAsset in layout.customAssets) {
+    // A dry layout packs no jar, and every reader of its entries drops a `CustomAssetEntry`. An asset supplier
+    // resolves the library roots and the files it reads, and a reference fragment declares only the files it packs.
+    // So a dry layout evaluates no custom asset.
+    if (dryRun) {
+      return
+    }
+
+    for (customAsset in layout.customAssetsFor(classicDev = context.options.isDevDistribution)) {
       if (customAsset.platformSpecific != null) {
         continue
       }
@@ -676,7 +684,6 @@ private fun buildJars(
   isCodesignEnabled: Boolean,
   dryRun: Boolean,
   layout: BaseLayout?,
-  helper: JarPackagerDependencyHelper,
   context: BuildContext,
 ): BuildAssetResult {
   checkAssetUniqueness(assets)
@@ -692,7 +699,6 @@ private fun buildJars(
       context = context,
       cache = cache,
       layout = layout,
-      helper = helper,
     )
   }
 
@@ -766,7 +772,6 @@ private fun buildAsset(
   context: BuildContext,
   cache: JarCacheManager,
   layout: BaseLayout?,
-  helper: JarPackagerDependencyHelper,
 ): BuildAssetResult {
   val includedModules = asset.includedModules
   val sources = assembleOrderedJarSources(
@@ -822,8 +827,8 @@ private fun buildAsset(
           }
 
           override fun produce(targetFile: Path) {
-            val addDirEntries = includedModules.any { helper.isTestPluginModule(moduleName = it.key.moduleName, module = null) }
-            buildJar(targetFile = targetFile, sources = sources, nativeFileHandler = nativeFileHandler, addDirEntries = addDirEntries)
+            // The cache can hand a temporary sibling file, so the manifest check takes the name of the jar in the distribution.
+            buildJar(targetFile = targetFile, sources = sources, nativeFileHandler = nativeFileHandler, jarName = file.fileName.toString())
           }
 
           override fun consumeInfo(source: Source, size: Int, hash: Long) {

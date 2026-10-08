@@ -79,6 +79,8 @@
                     interface="com.intellij.debugger.engine.SteppingListener" dynamic="true"/>
     <extensionPoint qualifiedName="com.intellij.debugger.dumpItemsProvider"
                     interface="com.intellij.debugger.impl.ThreadDumpItemsProviderFactory" dynamic="true"/>
+    <extensionPoint qualifiedName="com.intellij.debugger.breakpointThreadDumpCapture"
+                    interface="com.intellij.debugger.ui.breakpoints.BreakpointThreadDumpCapture" dynamic="true"/>
     <extensionPoint qualifiedName="com.intellij.debugger.agentParametersModifier"
                     interface="com.intellij.debugger.engine.DebuggerAgentParametersModifier" dynamic="true"/>
     <extensionPoint qualifiedName="com.intellij.debugger.agentProvider"
@@ -144,8 +146,6 @@
     <debugger.sourcePositionHighlighter implementation="com.intellij.debugger.engine.JavaSourcePositionHighlighter"/>
     <java.elementFinder implementation="com.intellij.debugger.impl.AlternativeJreClassFinder" order="last"/>
 
-    <debugger.asyncStackTraceProvider
-      implementation="com.intellij.debugger.ui.breakpoints.StackCapturingLineBreakpoint$CaptureAsyncStackTraceProvider"/>
     <debugger.dumpItemsProvider implementation="com.intellij.debugger.actions.JavaVirtualThreadsProvider"/>
     <xdebugger.controlExceptionBreakpointSupport implementation="com.intellij.debugger.codeinsight.ControlExceptionBreakpointJVMSupport"/>
     <iconProvider implementation="com.intellij.debugger.engine.evaluation.AdditionalContextIconProvider"/>
@@ -342,8 +342,6 @@
                  description="Enable reading capture points from annotations"/>
     <registryKey key="debugger.collection.watchpoints.enabled" defaultValue="false"
                  description="Enable collection watchpoints support"/>
-    <registryKey key="debugger.async.stacks.via.breakpoints" defaultValue="false"
-                 description="Enable async stack traces implementation via breakpoints"/>
     <registryKey key="debugger.breakpoint.instrumentation" defaultValue="true"
                  description="Use instrumentation conditional and logging breakpoints if possible"/>
     <registryKey key="debugger.breakpoint.instrumentation.hotswap.mode" defaultValue="[NONE|SUPPORT_ONLY_EXTERNAL_HOTSWAP|INSTALL_WHEN_TARGET_METHODS_NOT_ON_STACK|WITH_INSTRUMENTATION_PENDING*]"
@@ -362,7 +360,7 @@
                  description="Enable async stack traces for coroutines"/>
     <registryKey key="debugger.async.stacks.max.depth" defaultValue="500"
                  description="Maximum depth of captured async stacks"/>
-    <registryKey key="debugger.log.async.stacks" defaultValue="false"
+    <registryKey key="debugger.log.async.stacks" defaultValue="true"
                  description="Log async stack trace when log stack trace is checked in breakpoint properties"/>
     <registryKey key="debugger.batch.evaluation" defaultValue="true"
                  description="Evaluate multiple values in a single batch request to the debuggee"/>
@@ -426,9 +424,6 @@
       </action>
       <action id="Debugger.AdjustArrayRange" class="com.intellij.debugger.actions.ArrayAction$AdjustArrayRangeAction">
         <add-to-group group-id="XDebugger.ValueGroup" anchor="last"/>
-      </action>
-      <action id="Debugger.ShowRelatedStack" class="com.intellij.debugger.actions.ShowRelatedStackAction">
-        <add-to-group group-id="XDebugger.ValueGroup" anchor="first"/>
       </action>
       <action id="Debugger.ForceEarlyReturn" class="com.intellij.debugger.actions.ForceEarlyReturnAction">
         <add-to-group group-id="XDebugger.Frames.Tree.Popup" anchor="after" relative-to-action="Debugger.PopFrame"/>

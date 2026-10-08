@@ -21,6 +21,7 @@ import org.intellij.plugins.markdown.editor.livepreview.toMarkdownLivePreviewRan
 import org.intellij.plugins.markdown.lang.MarkdownElementTypes
 import org.intellij.plugins.markdown.lang.MarkdownTokenTypeSets
 import org.intellij.plugins.markdown.lang.MarkdownTokenTypes
+import org.intellij.plugins.markdown.lang.psi.impl.MarkdownAlertTitle
 import org.intellij.plugins.markdown.lang.psi.impl.MarkdownFile
 import org.intellij.plugins.markdown.lang.psi.impl.MarkdownHeader
 import org.intellij.plugins.markdown.lang.psi.impl.MarkdownImage
@@ -68,8 +69,11 @@ fun computeLivePreviewSpecs(file: PsiFile, editor: Editor): MarkdownLivePreviewS
     .expand { PsiUtilCore.getElementType(it) !in NoDescendTypes }
     .asSequence()
     .flatMap {
-      if (PsiUtilCore.getElementType(it) == MarkdownElementTypes.BLOCK_QUOTE) blockQuotes.create(it.textRange)
-      else listOfNotNull(it.toDecorationSpecs(editor))
+      when (PsiUtilCore.getElementType(it)) {
+        MarkdownElementTypes.BLOCK_QUOTE -> blockQuotes.create(it.textRange)
+        MarkdownElementTypes.ALERT -> blockQuotes.create(it.textRange, it.alertType())
+        else -> listOfNotNull(it.toDecorationSpecs(editor))
+      }
     }
     .sortedWith(compareBy({ it.range.startOffset }, { it.range.endOffset }))
     .toList()
@@ -86,17 +90,19 @@ private fun PsiElement.toDecorationSpecs(editor: Editor): MarkdownLivePreviewSpe
     MarkdownElementTypes.STRIKETHROUGH -> delimiterConceals(MarkdownTokenTypes.TILDE)
     MarkdownElementTypes.CODE_SPAN -> delimiterConceals(MarkdownTokenTypes.BACKTICK)
     MarkdownElementTypes.INLINE_LINK -> toInlineLinkSpecs()
+    MarkdownElementTypes.FULL_REFERENCE_LINK, MarkdownElementTypes.SHORT_REFERENCE_LINK -> toReferenceLinkSpecs()
     MarkdownElementTypes.IMAGE -> if (isInsideTable()) null else toImageSpec(editor)
     // `<https://example.org>` becomes a composite holding the brackets, while `<name@example.org>` stays
     // flat and keeps them as siblings, so the two forms need different lookups.
     MarkdownElementTypes.AUTOLINK -> toAutolinkSpecs()
     in LeafAutolinkTypes -> toAutolinkSpecs()
-    in MarkdownTokenTypeSets.ATX_HEADERS -> (this as? MarkdownHeader)?.toHeadingSpec(editor)
+    in MarkdownTokenTypeSets.HEADERS -> (this as? MarkdownHeader)?.toHeadingSpec(editor)
     MarkdownTokenTypes.LIST_BULLET -> toBulletSpec()
     MarkdownTokenTypes.CHECK_BOX -> toTaskCheckboxSpec()
     MarkdownTokenTypes.HORIZONTAL_RULE -> toHorizontalRuleSpec()
     MarkdownElementTypes.FRONT_MATTER_HEADER_DELIMITER -> toFrontMatterDelimiterSpec()
-    MarkdownTokenTypes.SETEXT_2 -> toSetextCodeSpanUnderlineSpec()
+    MarkdownTokenTypes.SETEXT_1, MarkdownTokenTypes.SETEXT_2 -> toSetextUnderlineSpec()
+    MarkdownTokenTypes.ALERT_TITLE -> toAlertTitleSpec()
     else -> null
   }
 }
@@ -134,7 +140,7 @@ private class BlockQuoteSpecBuilder(private val source: CharSequence, private va
     }
   }
 
-  fun create(blockQuoteRange: TextRange): List<MarkdownLivePreviewSpec.BlockQuote> {
+  fun create(blockQuoteRange: TextRange, alertType: MarkdownLivePreviewSpec.AlertType? = null): List<MarkdownLivePreviewSpec.BlockQuote> {
     while (quoteEnds.isNotEmpty() && quoteEnds.last() <= blockQuoteRange.startOffset) quoteEnds.removeLast()
     quoteEnds.addLast(blockQuoteRange.endOffset)
 
@@ -158,6 +164,7 @@ private class BlockQuoteSpecBuilder(private val source: CharSequence, private va
         markerRange = marker,
         ruleRange = MarkdownLivePreviewRange(marker.startOffset, ruleEnd),
         placeholderText = placeholder,
+        alertType = alertType,
       )
     }
   }
@@ -183,11 +190,18 @@ private fun CharSequence.blockQuoteMarkerOffsets(lineStart: Int, lineEnd: Int): 
         else -> {
           val markerEnd = this@blockQuoteMarkerOffsets.listMarkerEnd(offset, lineEnd)
           if (markerEnd == offset) break
-          offset = markerEnd
+          offset = this@blockQuoteMarkerOffsets.taskCheckboxEnd(markerEnd, lineEnd)
         }
       }
     }
   }
+
+/** Skips the task checkbox after a list marker, so that a blockquote after `- [ ]` keeps its marker. */
+private fun CharSequence.taskCheckboxEnd(offset: Int, lineEnd: Int): Int {
+  var cursor = offset
+  while (cursor < lineEnd && this[cursor] in " \t") cursor++
+  return if (cursor + 3 < lineEnd && MarkdownLivePreviewUtils.isCheckbox(this, cursor) && this[cursor + 3] in " \t") cursor + 3 else offset
+}
 
 private fun CharSequence.listMarkerEnd(offset: Int, lineEnd: Int): Int {
   var cursor = offset
@@ -198,11 +212,29 @@ private fun CharSequence.listMarkerEnd(offset: Int, lineEnd: Int): Int {
   return if (cursor + 1 < lineEnd && this[cursor + 1] in " \t") cursor + 1 else offset
 }
 
+private fun PsiElement.alertType(): MarkdownLivePreviewSpec.AlertType? {
+  return when ((node.findChildByType(MarkdownTokenTypes.ALERT_TITLE)?.psi as? MarkdownAlertTitle)?.getType()) {
+    MarkdownAlertTitle.AlertType.NOTE -> MarkdownLivePreviewSpec.AlertType.NOTE
+    MarkdownAlertTitle.AlertType.TIP -> MarkdownLivePreviewSpec.AlertType.TIP
+    MarkdownAlertTitle.AlertType.IMPORTANT -> MarkdownLivePreviewSpec.AlertType.IMPORTANT
+    MarkdownAlertTitle.AlertType.WARNING -> MarkdownLivePreviewSpec.AlertType.WARNING
+    MarkdownAlertTitle.AlertType.CAUTION -> MarkdownLivePreviewSpec.AlertType.CAUTION
+    null -> null
+  }
+}
+
+/** Hides `[!` and `]` of `[!NOTE]`, leaving the alert type as text. */
+private fun PsiElement.toAlertTitleSpec(): MarkdownLivePreviewSpec.Conceal? {
+  val range = textRange
+  if (range.length < 4 || !text.startsWith("[!") || !text.endsWith("]")) return null
+  return inlineConceal(TextRange.from(range.startOffset, 2), TextRange.from(range.endOffset - 1, 1))
+}
+
 private fun PsiElement.isInsideTable(): Boolean = PsiTreeUtil.getParentOfType(this, MarkdownTable::class.java) != null
 
 private fun MarkdownHeader.toHeadingSpec(editor: Editor): MarkdownLivePreviewSpec.Heading? {
   val content = contentElement
-  if (parent !is MarkdownFile || content?.isAtxContent != true) return null
+  if (parent !is MarkdownFile || content == null) return null
   val range = logicalLineRange(editor)
   val html = HeadingHtmlGenerator.generate(content, range.startOffset)
   return MarkdownLivePreviewSpec.Heading(range.toMarkdownLivePreviewRange(), level, html)
@@ -220,12 +252,9 @@ private fun PsiElement.toImageSpec(editor: Editor): MarkdownLivePreviewSpec.Imag
   return MarkdownLivePreviewSpec.Image(range.toMarkdownLivePreviewRange(), destination, placeholderText, source)
 }
 
-private fun PsiElement.toSetextCodeSpanUnderlineSpec(): MarkdownLivePreviewSpec? {
-  val header = parent ?: return null
-  if (PsiUtilCore.getElementType(header) != MarkdownElementTypes.SETEXT_2) return null
-  val content = header.children.singleOrNull { PsiUtilCore.getElementType(it) == MarkdownTokenTypes.SETEXT_CONTENT } ?: return null
-  if (content.children.singleOrNull { PsiUtilCore.getElementType(it) == MarkdownElementTypes.CODE_SPAN } == null) return null
-  return toHorizontalRuleSpec()
+/** Paints the `===` or `---` line under a Setext heading as a horizontal rule. */
+private fun PsiElement.toSetextUnderlineSpec(): MarkdownLivePreviewSpec.HorizontalRule? {
+  return if (parent is MarkdownHeader) toHorizontalRuleSpec() else null
 }
 
 private fun PsiElement.toHorizontalRuleSpec(): MarkdownLivePreviewSpec.HorizontalRule {
@@ -339,6 +368,30 @@ private fun PsiElement.toInlineLinkSpecs(): MarkdownLivePreviewSpec.Conceal? {
   if (closeBracket.textRange.startOffset <= openBracket.textRange.endOffset || end <= closeBracket.textRange.startOffset) {
     return null
   }
+  return inlineConceal(openBracket.textRange, TextRange(closeBracket.textRange.startOffset, end))
+}
+
+/** Hides the markup of a full, collapsed, or shortcut reference link. */
+private fun PsiElement.toReferenceLinkSpecs(): MarkdownLivePreviewSpec.Conceal? {
+  val children = childList()
+  val linkText = children.firstOrNull { PsiUtilCore.getElementType(it) == MarkdownElementTypes.LINK_TEXT }
+  val linkLabel = children.firstOrNull { PsiUtilCore.getElementType(it) == MarkdownElementTypes.LINK_LABEL } ?: return null
+  val visiblePart = linkText ?: linkLabel
+  val visibleChildren = visiblePart.childList()
+  val openBracket = visibleChildren.firstOrNull() ?: return null
+  if (PsiUtilCore.getElementType(openBracket) != MarkdownTokenTypes.LBRACKET) return null
+  val closeBracket = visibleChildren.lastOrNull() ?: return null
+  if (PsiUtilCore.getElementType(closeBracket) != MarkdownTokenTypes.RBRACKET) return null
+  if (closeBracket.textRange.startOffset <= openBracket.textRange.endOffset) return null
+
+  if (linkText == null) {
+    // The parser stores the empty label of a collapsed link as trailing children.
+    val end = if (children.size > 1) textRange.endOffset else closeBracket.textRange.endOffset
+    return inlineConceal(openBracket.textRange, TextRange(closeBracket.textRange.startOffset, end))
+  }
+
+  val end = textRange.endOffset
+  if (end <= closeBracket.textRange.startOffset) return null
   return inlineConceal(openBracket.textRange, TextRange(closeBracket.textRange.startOffset, end))
 }
 

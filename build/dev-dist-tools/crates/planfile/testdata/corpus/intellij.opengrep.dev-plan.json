@@ -2,7 +2,6 @@
     "version": 2,
     "plugin": "intellij.opengrep",
     "variant": "",
-    "layoutSignature": "bb16ml6h4p44l172ytxyn9b8q",
     "assets": [
         {
             "destination": "lib/intellij.opengrep.common.jar",
@@ -185,24 +184,6 @@
             ],
             "kind": "tree",
             "classPath": false
-        }
-    ],
-    "preparations": [
-        {
-            "id": "layout-assets:resource-generator:0",
-            "inputs": [
-                "layout-source:resource-generator:0:0",
-                "layout-source:resource-generator:0:1",
-                "layout-source:resource-generator:0:2",
-                "layout-source:resource-generator:0:3",
-                "layout-source:resource-generator:0:4",
-                "layout-source:resource-generator:0:5",
-                "layout-source:resource-generator:0:6"
-            ],
-            "outputs": [
-                "layout-assets:resource-generator:0:output"
-            ],
-            "modelSignature": "4atgqvj2qtc8dtm4eknw4878y"
         }
     ],
     "operations": [

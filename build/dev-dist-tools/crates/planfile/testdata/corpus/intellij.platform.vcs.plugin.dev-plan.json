@@ -1,8 +1,7 @@
 {
-    "version": 3,
+    "version": 2,
     "plugin": "intellij.platform.vcs.plugin",
     "variant": "{platform}",
-    "layoutSignature": "{platform:layoutSignature}",
     "assets": [
         {
             "module": "intellij.platform.vcs"
@@ -85,8 +84,7 @@
                 "native-tree:intellij.libraries.sqlite.native"
             ],
             "kind": "tree",
-            "classPath": false,
-            "scope": "distribution"
+            "classPath": false
         },
         {
             "destination": "lib/platform-vcs-plugin.jar",

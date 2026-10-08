@@ -2,7 +2,7 @@
   <id>com.jetbrains.performancePlugin</id>
   <name>Performance Diagnostics</name>
   <vendor>JetBrains</vendor>
-  <category>Platform Development</category>
+  <category>Other Tools</category>
   <resource-bundle>messages.PerformanceTestingBundle</resource-bundle>
 
   <description><![CDATA[
@@ -51,14 +51,17 @@
     <module name="intellij.platform.ide.concurrency"/>
     <module name="intellij.platform.ide.core"/>
     <module name="intellij.platform.ide.core.impl"/>
+    <module name="intellij.platform.ide.hprof"/>
     <module name="intellij.platform.ide.impl"/>
     <module name="intellij.platform.ide.internal"/>
+    <module name="intellij.platform.ide.playback"/>
     <module name="intellij.platform.ide.progress"/>
     <module name="intellij.platform.indexing"/>
     <module name="intellij.platform.indexing.impl"/>
     <module name="intellij.platform.lang"/>
     <module name="intellij.platform.lang.core"/>
     <module name="intellij.platform.lang.impl"/>
+    <module name="intellij.platform.productMode"/>
     <module name="intellij.platform.projectModel"/>
     <module name="intellij.platform.projectModel.impl"/>
     <module name="intellij.platform.refactoring"/>
@@ -78,7 +81,7 @@
     <module name="intellij.performanceTesting.vcs"/>
     <module name="intellij.performanceTesting.debugger"/>
     <module name="intellij.performanceTesting.frontend"/>
-    <module name="intellij.performanceTesting.frontend.base"/>
+    <module name="intellij.performanceTesting.frontend.baseline"/>
     <module name="intellij.performanceTesting.problemsView"/>
     <module name="intellij.performanceTesting.structureView"/>
     <module name="intellij.performanceTesting.backend"/>

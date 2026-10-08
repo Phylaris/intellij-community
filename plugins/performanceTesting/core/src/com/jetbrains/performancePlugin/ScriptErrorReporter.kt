@@ -1,4 +1,5 @@
 // Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
+@file:Suppress("UseOptimizedEelFunctions")
 package com.jetbrains.performancePlugin
 
 import com.intellij.diagnostic.AbstractMessage
@@ -30,25 +31,24 @@ private const val PRODUCT_INFO_FILE = "product_info.txt"
 internal fun errorReportingDir(): Path = LogDirHandler.currentLogDir().resolve(ERRORS_DIR)
 
 internal val toErrorDirReporter: MessagePoolAdvisor = object : MessagePoolAdvisor {
-  override suspend fun beforeEntryAdded(e: MessagePoolAdvisor.BeforeEntryAddedEvent): Boolean {
-    reportAndMark(e.message, errorReportingDir())
+  override suspend fun beforeEntryAdded(message: AbstractMessage): Boolean {
+    reportAndMark(message, errorReportingDir())
     return true
   }
 }
 
-// Drain both asynchronous error-reporting stages before reading the pool. Otherwise, an error logged just before
+// Drain asynchronous error-reporting queues before reading the pool. Otherwise, an error logged just before
 // the log dir switches can still be mid-flight and get attributed to the new dir once its coroutine resumes.
 // See com.intellij.ide.starter.extended.report.ErrorReportingReusedE2ETest.
 internal suspend fun sweepExistingErrors() {
   java.util.logging.Logger.getLogger("").handlers
     .filterIsInstance<DialogAppender>()
     .forEach { it.awaitPendingJobs() }
-  MessagePool.getInstance().awaitPendingJobs()
-  val scriptErrorsDir = errorReportingDir()
 
-  val messages = MessagePool.getInstance().getFatalErrors(false, true)
+  val messages = MessagePool.getInstance().getFatalErrors(includeReadMessages = false, includeSubmittedMessages = true)
   if (messages.isEmpty()) return
 
+  val scriptErrorsDir = errorReportingDir()
   messages.forEach { message ->
     reportAndMark(message, scriptErrorsDir)
   }

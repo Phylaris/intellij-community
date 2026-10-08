@@ -317,6 +317,8 @@ f:com.intellij.execution.process.OSProcessUtil
 - s:processName(java.lang.ProcessHandle):java.lang.String
 - s:terminateProcessGracefully(I):V
 - s:terminateProcessGracefully(java.lang.Process):V
+f:com.intellij.execution.process.ProcessHandlerFunctions
+- sf:initiateProcessTermination(com.intellij.execution.process.ProcessHandler):V
 c:com.intellij.execution.process.ProcessInfo
 - sf:EMPTY_ARRAY:com.intellij.execution.process.ProcessInfo[]
 - <init>(I,java.lang.String,java.lang.String,java.lang.String):V
@@ -388,6 +390,9 @@ f:com.intellij.execution.process.ScriptRunnerUtil
 - s:terminateProcessHandler(com.intellij.execution.process.ProcessHandler,J,java.lang.String):V
 f:com.intellij.execution.process.impl.ProcessListUtil
 - s:getProcessList():com.intellij.execution.process.ProcessInfo[]
+f:com.intellij.execution.processTools.ExecutionResult
+- f:getExitCode():I
+- f:getStdOut():B[]
 f:com.intellij.execution.util.ExecUtil
 - sf:INSTANCE:com.intellij.execution.util.ExecUtil
 - sf:createTempExecutableScript(java.lang.String,java.lang.String,java.lang.String):java.io.File

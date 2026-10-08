@@ -15,15 +15,15 @@
 use std::cell::Cell;
 use std::fs::{self, File};
 use std::io::{Cursor, Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, DateTime, ZipArchive, ZipWriter};
 
-use crate::MergeSpec;
 use crate::writer::INDEX_FORMAT_VERSION;
+use crate::{EntryFilter, FlagFile, INDEX_FILE_NAME, MANIFEST_ENTRY_NAME, MergeOptions, MergeSpec, Source, parse_flag_file};
 
 /// The temporary directories of one test. [`Scratch::dir`] returns a new empty directory, as the Go `t.TempDir()` did.
 pub(crate) struct Scratch {
@@ -64,7 +64,7 @@ pub(crate) struct SourceEntry<'a> {
 }
 
 /// A DEFLATED entry.
-pub(crate) fn entry<'a>(name: &'a str, data: &'a str) -> SourceEntry<'a> {
+pub(crate) const fn entry<'a>(name: &'a str, data: &'a str) -> SourceEntry<'a> {
     SourceEntry { name, data, stored: false }
 }
 
@@ -157,13 +157,23 @@ pub(crate) fn write_raw_jar(scratch: &Scratch, name: &str, entries: &[RawEntry<'
 }
 
 /// Runs a recipe and returns the bytes of the packed jar. Every case checks the CRCs: a carried CRC is sound only while
-/// it describes its data, and in a test that check costs nothing.
+/// it describes its data, and in a test that check costs nothing. Every case also checks the size and the content hash
+/// of the report against the file.
 pub(crate) fn pack(scratch: &Scratch, mut spec: MergeSpec) -> (Vec<u8>, Vec<String>) {
     let file_name = spec.output.file_name().expect("an output file name").to_owned();
     spec.output = scratch.dir().join(file_name);
-    spec.verify_crc = true;
-    let report = spec.pack().unwrap_or_else(|error| panic!("{error}"));
-    (fs::read(&spec.output).expect("the packed jar"), report.duplicates)
+    // The caller creates the tree root, as the packer does.
+    if let Some(tree) = spec.native.as_ref().and_then(|native| native.tree.as_ref()) {
+        fs::create_dir_all(&tree.dir).expect("the tree root");
+    }
+    let report = spec
+        .pack(&MergeOptions { verify_crc: true })
+        .unwrap_or_else(|error| panic!("{error:#}"));
+    let data = fs::read(&spec.output).expect("the packed jar");
+    assert_eq!(report.bytes_written, data.len() as u64, "the size of {}", spec.output.display());
+    let content_hash = xxh3::hash_file(&spec.output).expect("the hash of the packed jar");
+    assert_eq!(report.content_hash, content_hash, "the content hash of {}", spec.output.display());
+    (data, report.duplicates)
 }
 
 pub(crate) fn digest(data: &[u8]) -> String {
@@ -207,4 +217,90 @@ pub(crate) fn index_pointer(data: &[u8]) -> i32 {
     assert_eq!(u16::from_le_bytes([tail[20], tail[21]]), 5, "the comment length");
     assert_eq!(tail[22], INDEX_FORMAT_VERSION, "the index format version");
     i32::from_le_bytes(tail[23..27].try_into().unwrap())
+}
+
+// The recipes that several test modules share.
+
+/// Returns the groups of a flag file with the text `lines`.
+pub(crate) fn parse_recipe(scratch: &Scratch, lines: &str) -> anyhow::Result<Vec<MergeSpec>> {
+    parse_recipe_file(scratch, lines).map(|flag_file| flag_file.groups)
+}
+
+pub(crate) fn parse_recipe_file(scratch: &Scratch, lines: &str) -> anyhow::Result<FlagFile> {
+    let path = scratch.file("recipe.params", lines.as_bytes());
+    parse_flag_file(&path, Path::new("/exec/root"))
+}
+
+pub(crate) const fn is_library(source: &Source) -> bool {
+    matches!(
+        source,
+        Source::Jar {
+            filter: EntryFilter::Library,
+            ..
+        }
+    )
+}
+
+/// The entries of [`module_source`].
+const MODULE_ENTRIES: [SourceEntry<'static>; 10] = [
+    entry("com/", ""),
+    entry("com/example/", ""),
+    entry("com/example/Service.class", "class bytes"),
+    entry("com/example/nested/Inner.class", "inner bytes"),
+    entry("messages/Bundle.properties", "key=value"),
+    entry(".unmodified", "dropped: compilation cache leftover"),
+    entry(".hash", "dropped: compilation cache leftover"),
+    entry("classpath.index", "dropped: compilation cache leftover"),
+    entry("module-info.class", "dropped"),
+    entry(INDEX_FILE_NAME, "dropped: a stale index is never inherited"),
+];
+
+/// What `jvm_library` gives the packer: a module output jar from Bazel. It has directory records, the compilation cache
+/// leftovers that the filter drops, and what an earlier pack left behind. It has no manifest, because a module output has one only when
+/// the module states it in its resources.
+pub(crate) fn module_source(scratch: &Scratch, name: &str) -> PathBuf {
+    write_zip_jar(scratch, name, &MODULE_ENTRIES)
+}
+
+/// The jar of [`module_source`] with a module manifest as its last entry.
+pub(crate) fn module_source_with_manifest(scratch: &Scratch, name: &str) -> PathBuf {
+    module_source_with_manifest_text(scratch, name, "Manifest-Version: 1.0\r\n\r\n")
+}
+
+/// The jar of [`module_source`] with `manifest` as its last entry.
+pub(crate) fn module_source_with_manifest_text(scratch: &Scratch, name: &str, manifest: &str) -> PathBuf {
+    let mut entries = MODULE_ENTRIES.to_vec();
+    entries.push(entry(MANIFEST_ENTRY_NAME, manifest));
+    write_zip_jar(scratch, name, &entries)
+}
+
+/// The manifest that the rules_kotlin backend writes into the module output of `label`, as singlejar writes it.
+pub(crate) fn rule_manifest(label: &str) -> String {
+    format!("Manifest-Version: 1.0\r\nCreated-By: singlejar\r\nTarget-Label: {label}\r\nInjecting-Rule-Kind: kt_jvm_library\r\n\r\n")
+}
+
+/// The manifest that [`agent_sources`] gives the module output. It has LF line ends, as a checked-in resource file has.
+pub(crate) const AGENT_MANIFEST: &str = "Manifest-Version: 1.0\nPremain-Class: com.example.agent.Premain\n\
+                                         Boot-Class-Path: intellij.example.agent.jar\nCan-Retransform-Classes: true\n";
+
+/// A Java agent jar: a library with its own manifest, and the module output of the agent with the manifest of the
+/// agent. The output jar is `intellij.example.agent.jar`.
+pub(crate) fn agent_sources(scratch: &Scratch) -> (PathBuf, PathBuf) {
+    let library = write_zip_jar(
+        scratch,
+        "asm-9.8.jar",
+        &[
+            entry("org/objectweb/asm/ClassReader.class", "reader"),
+            entry(MANIFEST_ENTRY_NAME, "Manifest-Version: 1.0\r\nBundle-Name: asm\r\n\r\n"),
+        ],
+    );
+    let module = write_zip_jar(
+        scratch,
+        "agent.jar",
+        &[
+            entry("com/example/agent/Premain.class", "premain"),
+            entry(MANIFEST_ENTRY_NAME, AGENT_MANIFEST),
+        ],
+    );
+    (library, module)
 }

@@ -11,7 +11,6 @@ import com.intellij.openapi.help.HelpManager
 import com.intellij.openapi.module.Module
 import com.intellij.openapi.observable.properties.AtomicProperty
 import com.intellij.openapi.observable.properties.ObservableProperty
-import com.intellij.openapi.projectRoots.Sdk
 import com.intellij.openapi.ui.ValidationInfo
 import com.intellij.openapi.ui.validation.DialogValidationRequestor
 import com.intellij.openapi.ui.validation.WHEN_PROPERTY_CHANGED
@@ -26,6 +25,9 @@ import com.intellij.python.hatch.common.icons.PythonHatchCommonIcons
 import com.intellij.python.hatch.impl.HATCH_TOOL_ID
 import com.intellij.python.pytools.backend.PyExecutable
 import com.intellij.python.pytools.backend.setCustomExecutablePath
+import com.intellij.python.sdk.backend.PythonInterpreter
+import com.intellij.python.sdk.backend.getSdkAPI
+import com.intellij.python.sdk.backend.pythonInterpreterAsync
 import com.intellij.python.uv.common.UV_TOOL_ID
 import com.intellij.python.uv.common.icons.PythonUvCommonIcons
 import com.intellij.python.venv.common.icons.PythonVenvCommonIcons
@@ -46,9 +48,6 @@ import com.jetbrains.python.sdk.configuration.PIPENV_TOOL_ID
 import com.jetbrains.python.sdk.configuration.VENV_TOOL_ID
 import com.jetbrains.python.sdk.createSdkGuessingTypeByPath
 import com.jetbrains.python.sdk.excludeInnerVirtualEnv
-import com.jetbrains.python.sdk.moduleIfExists
-import com.jetbrains.python.sdk.pythonSdk
-import com.jetbrains.python.sdk.setAssociationToModule
 import com.jetbrains.python.statistics.InterpreterTarget
 import com.jetbrains.python.statistics.PythonInterpreterInstallationIdsHolder.Companion.PYTHON_INSTALLATION_INTERRUPTED
 import com.jetbrains.python.target.ui.TargetPanelExtension
@@ -83,20 +82,21 @@ abstract class PythonAddEnvironment<P : PathHolder>(open val model: PythonAddInt
    *
    * Error is shown to user. Do not catch all exceptions, only return exceptions valuable to user
    */
-  protected abstract suspend fun getOrCreateSdk(moduleOrProject: ModuleOrProject): PyResult<Sdk>
+  protected abstract suspend fun getOrCreateSdk(moduleOrProject: ModuleOrProject): PyResult<PythonInterpreter>
 
+  /**
+   * Creates the interpreter this panel describes, or finds the one that exists. A new SDK gets its module association
+   * when it is created.
+   *
+   * It does not make the interpreter the interpreter of a project. The caller does that with
+   * [com.intellij.python.pyproject.model.evolution.setPythonInterpreter].
+   */
   @ApiStatus.Internal
-  suspend fun setupSdk(moduleOrProject: ModuleOrProject): PyResult<Sdk> {
+  suspend fun setupSdk(moduleOrProject: ModuleOrProject): PyResult<PythonInterpreter> {
     savePathToExecutableToProperties()
-    val sdk = getOrCreateSdk(moduleOrProject).getOr { return it }
-
-    moduleOrProject.project.excludeInnerVirtualEnv(sdk)
-    moduleOrProject.moduleIfExists?.let {
-      it.pythonSdk = sdk
-      sdk.setAssociationToModule(it)
-    }
-
-    return Result.success(sdk)
+    val pythonInterpreter = getOrCreateSdk(moduleOrProject).getOr { return it }
+    moduleOrProject.project.excludeInnerVirtualEnv(pythonInterpreter.getSdkAPI())
+    return Result.success(pythonInterpreter)
   }
 
   /**
@@ -106,7 +106,7 @@ abstract class PythonAddEnvironment<P : PathHolder>(open val model: PythonAddInt
    */
   protected suspend fun savePathToExecutableToProperties() {
     if (!persistToolExecutableOnSetup) return
-    val savingPath = toolExecutable?.get()?.pathHolder ?: return
+    val savingPath = toolExecutable?.get()?.pathHolder?.successOrNull ?: return
     toolExecutablePersister(savingPath)
   }
 
@@ -187,7 +187,7 @@ enum class PythonInterpreterSelectionMethod {
 }
 
 @RequiresEdt(generateAssertion = false /* IJPL-115548 */)
-internal fun installBaseSdk(installRequest: InstallablePythonSdk): kotlin.Result<Sdk> {
+internal suspend fun installBaseSdk(installRequest: InstallablePythonSdk): kotlin.Result<PythonInterpreter> {
   val installed = installRequest.install(null) {
     PythonSdkUtil.getAllSdks()
   }
@@ -209,7 +209,7 @@ internal fun installBaseSdk(installRequest: InstallablePythonSdk): kotlin.Result
       .getNotificationsManager()
       .showNotification(notification, IdeFocusManager.getGlobalInstance().lastFocusedFrame?.project)
   }
-  return installed
+  return installed.map { it.pythonInterpreterAsync() }
 }
 
 
@@ -217,9 +217,9 @@ internal suspend fun <P : PathHolder> InterpreterWithPath<P>.setupSdk(
   moduleOrProject: ModuleOrProject,
   fileSystem: FileSystem<P>,
   targetPanelExtension: TargetPanelExtension?,
-): PyResult<Sdk> {
+): PyResult<PythonInterpreter> {
   when (this) {
-    is ExistingSelectableInterpreter -> return PyResult.success(sdkWrapper.sdk)
+    is ExistingSelectableInterpreter -> return PyResult.success(pythonInterpreterWrapper.pythonInterpreter)
     is DetectedSelectableInterpreter, is ManuallyAddedSelectableInterpreter -> Unit
   }
 
@@ -228,13 +228,3 @@ internal suspend fun <P : PathHolder> InterpreterWithPath<P>.setupSdk(
 }
 
 
-/**
- * Persist the user-chosen executable [pathHolder] as the custom path for [executable] on the machine
- * this file system targets (per-Eel-machine store). No-op for the legacy target-based backend, which
- * has no Eel machine to key on.
- */
-internal fun FileSystem<*>.persistCustomToolPath(pathHolder: PathHolder, executable: PyExecutable) {
-  val eelPath = (pathHolder as? PathHolder.Eel)?.path ?: return
-  val eelDescriptor = eelDescriptor ?: return
-  executable.setCustomExecutablePath(eelDescriptor, eelPath)
-}

@@ -2,11 +2,12 @@
 package com.intellij.python.junit5Tests.env.tests.ruff
 
 import com.intellij.openapi.module.Module
+import com.intellij.python.junit5Tests.framework.pyProjectFixture
 import com.intellij.python.ruff.codeinsight.RuffConfigError
 import com.intellij.python.ruff.codeinsight.checkRuffConfig
 import com.intellij.python.junit5Tests.framework.env.PyEnvTestCase
-import com.intellij.python.junit5Tests.framework.env.pySdkFixture
-import com.intellij.python.junit5Tests.framework.pyModuleFixture
+import com.intellij.python.junit5Tests.framework.env.pyInterpreterFixture
+import com.intellij.python.junit5Tests.framework.pyProjectFixture
 import com.intellij.python.ruff.RuffPyTool
 import com.intellij.python.test.env.junit5.LspToolVersions
 import com.intellij.python.test.env.junit5.installToolPackage
@@ -17,6 +18,7 @@ import com.intellij.testFramework.junit5.fixture.projectFixture
 import com.intellij.testFramework.junit5.fixture.tempPathFixture
 import com.jetbrains.python.allure.Layers
 import com.jetbrains.python.allure.Subsystems
+import com.jetbrains.python.project.PyProject
 import com.jetbrains.python.sdk.ModuleOrProject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -95,10 +97,10 @@ internal class RuffConfigCheckEnvTest {
   }
 
   private suspend fun installRuff() {
-    // The venv fixture puts the SDK on the module, and `installToolPackage` reads that SDK.
+    // The venv fixture puts the SDK on the module, and `installToolPackage` reads its interpreter.
     venvFixture.get()
     if (ruffInstalled.compareAndSet(false, true)) {
-      module.installToolPackage(LspToolVersions.requirement(RuffPyTool.getInstance()))
+      pyProject.installToolPackage(LspToolVersions.requirement(RuffPyTool.getInstance()))
     }
   }
 
@@ -116,15 +118,15 @@ internal class RuffConfigCheckEnvTest {
 
     private val tempPathFixture = tempPathFixture()
     private val projectFixture = projectFixture(openAfterCreation = true)
-    private val moduleFixture = projectFixture.pyModuleFixture(tempPathFixture, addPathToSourceRoot = true)
-    private val venvFixture = pySdkFixture().pyVenvFixture(
+    private val pyProjectFixture = projectFixture.pyProjectFixture(tempPathFixture)
+    private val venvFixture = projectFixture.pyInterpreterFixture().pyVenvFixture(
       where = tempPathFixture,
-      addToSdkTable = true,
-      moduleFixture = moduleFixture,
+      pyProjectFixture = pyProjectFixture,
     )
 
     // `@TestApplication` implies `@TestFixtures`, which initializes every field of type `TestFixture`.
-    private val module: Module get() = moduleFixture.get()
+    private val module: Module get() = pyProjectFixture.get().residesOnModule
+    private val pyProject: PyProject get() = pyProjectFixture.get()
     private val workingDir: Path get() = tempPathFixture.get()
   }
 }

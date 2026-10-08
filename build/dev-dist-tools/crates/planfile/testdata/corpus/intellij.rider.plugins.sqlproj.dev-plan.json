@@ -2,7 +2,6 @@
     "version": 2,
     "plugin": "intellij.rider.plugins.sqlproj",
     "variant": "",
-    "layoutSignature": "cfscfgz24lj8tt7lnz0bk3wz8",
     "assets": [
         {
             "destination": "lib/rider-plugins-sqlproj.jar",
@@ -35,18 +34,6 @@
             ],
             "kind": "tree",
             "classPath": false
-        }
-    ],
-    "preparations": [
-        {
-            "id": "layout-assets:resource-generator:0",
-            "inputs": [
-                "optional-local-directory:out/bundle-plugins/rider-sqlproj-plugin"
-            ],
-            "outputs": [
-                "layout-assets:resource-generator:0:output"
-            ],
-            "modelSignature": "f0oa0drjcbohag21wn06a5nv7"
         }
     ],
     "operations": [

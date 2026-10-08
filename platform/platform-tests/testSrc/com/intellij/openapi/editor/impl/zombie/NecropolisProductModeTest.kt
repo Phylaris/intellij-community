@@ -3,14 +3,19 @@ package com.intellij.openapi.editor.impl.zombie
 
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.platform.ide.productMode.IdeProductMode
-import com.intellij.platform.runtime.product.ProductMode
+import com.intellij.platform.productMode.ProductMode
 import com.intellij.testFramework.LightPlatformTestCase
 import com.intellij.testFramework.replaceService
 
 internal class NecropolisProductModeTest : LightPlatformTestCase() {
 
-  fun testLightModeHasNoNecropolis() {
-    setProductMode(ProductMode.LIGHT)
+  fun testLightRemoteModeHasNoNecropolis() {
+    setProductMode(ProductMode.LIGHT_REMOTE)
+    assertNull(Necropolis.getInstance(project))
+  }
+
+  fun testLightMonolithModeHasNoNecropolis() {
+    setProductMode(ProductMode.LIGHT_MONOLITH)
     assertNull(Necropolis.getInstance(project))
   }
 

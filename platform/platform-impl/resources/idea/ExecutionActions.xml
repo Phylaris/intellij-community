@@ -46,8 +46,6 @@
       </group>
     </group>
 
-    <reference ref="RunToolbarRollbackToPrevious"/>
-
     <reference ref="RunTab.TopToolbar.Old"/>
     <reference ref="RunTab.TopToolbar"/>
 
@@ -72,6 +70,7 @@
         </group>
       </group>
       <separator/>
+      <add-to-group group-id="RunContextPopupGroup"/>
     </group>
 
     <reference ref="RunContextPopupGroup"/>

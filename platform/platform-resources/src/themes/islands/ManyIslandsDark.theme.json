@@ -480,6 +480,10 @@
       "successBorderColor": "feedback-success-border",
       "infoBackground": "feedback-brand-bg",
       "infoBorderColor": "feedback-brand-border",
+      "infoMutedBackground": "blue-30",
+      "infoMutedBorderColor": "blue-40",
+      "neutralMutedBackground": "gray-30",
+      "neutralMutedBorderColor": "gray-40",
       "aiBackground": "feedback-ai-bg",
       "aiBorderColor": "feedback-ai-border",
       "arc": 12,
@@ -867,7 +871,6 @@
     },
 
     "OnePixelDivider.background": "dialog-border",
-    "OnOffButtonUI": "com.intellij.ide.ui.laf.darcula.ui.IslandsOnOffButtonUI",
 
     "PasswordField": {
       "border": "com.intellij.ide.ui.laf.darcula.ui.DarculaTextBorderNew"
@@ -1148,10 +1151,6 @@
       "warningBackground": "feedback-warning-bg",
       "warningBorderColor": "feedback-warning-border",
       "warningForeground": "text-default"
-    },
-
-    "ToggleButton": {
-      "focusBorderColor": "toggle-focus-border"
     },
 
     "ToolWindow": {
@@ -1795,11 +1794,6 @@
       "Advertiser": {
         "background": "gray-40"
       }
-    },
-
-    "WelcomeTab.Banner": {
-      "infoBackground": "blue-30",
-      "infoBorderColor": "blue-40"
     }
   },
 

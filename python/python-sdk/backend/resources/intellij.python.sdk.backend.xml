@@ -22,6 +22,8 @@
     <module name="intellij.platform.ide.progress"/>
     <module name="intellij.platform.ide.rpc"/>
     <module name="intellij.platform.lang"/>
+    <module name="intellij.platform.lang.core"/>
+    <module name="intellij.platform.lang.impl"/>
     <module name="intellij.platform.project"/>
     <module name="intellij.platform.projectModel"/>
     <module name="intellij.platform.projectModel.impl"/>
@@ -64,6 +66,9 @@
     <!-- The `id` names the kind of environment. It is the only place a kind is named. -->
     <extensionPoint qualifiedName="Pythonid.pythonEnvironmentProvider"
                     interface="com.intellij.python.sdk.backend.PythonEnvironmentProvider"
+                    dynamic="true"/>
+    <extensionPoint qualifiedName="Pythonid.targetSupportsFilter"
+                    interface="com.jetbrains.python.sdk.filter.TargetSupportsFilterExtension"
                     dynamic="true"/>
   </extensionPoints>
 

@@ -1,8 +1,8 @@
 # contentreport API
 
-The Rust port of the Go package `build/internal/content`. The crate reads the executed packaging recipe of a
-dev-distribution fragment, reads a built distribution, and weighs the one against the other. The binary
-`content-report` of the ultimate workspace prints the result. The crate depends on `saphyr`, `thiserror` and `walkdir`.
+The crate reads the executed packaging recipe of a dev-distribution fragment, reads a built distribution, and weighs the
+one against the other. The binary `content-report` of the ultimate workspace prints the result. The crate depends on
+`anyhow`, `saphyr` and `walkdir`.
 
 ## File format
 
@@ -29,16 +29,16 @@ fields of `RecipeSource`: `kind`, `label`, `path`, `file`, `module`, `prefix`, `
 
 ## The subset rule
 
-The Go reader walks any YAML tree, and it reads a field of an unexpected shape as absent. The crate reads only what
-`DevDistRecipe` writes. It refuses every other input with an error that names the file, the line and the field.
+The crate reads only what `DevDistRecipe` writes. It refuses every other input with an error that names the file, the
+line and the field. The column "Former behavior" states what the former reader did with the input.
 
-`testdata/corpus/` holds the three plan files of one flag-on build of `//build:idea_air_dist`: 505 outputs and 825
+`testdata/corpus/` holds the three plan files of one flag-on build of `//build:idea_air_dist`: 504 outputs and 824
 sources. The corpus has the entry keys `name`, `kind`, `modules` and `sources`, the entry kinds `jar` and `placed`, the
 source kinds `zip` and `inMemory`, and the filter `unkeyed`. The crate also accepts the rest of what the writer code
 can write, because the writer writes it for other fragments. The community schema test compares field names only and
 has no fixture.
 
-| Refused input | Go behavior | Error |
+| Refused input | Former behavior | Error |
 | --- | --- | --- |
 | a plan without the two head comment lines, also a blank file | the fragment is the file stem, and no count check | `the head comment names no fragment`, `states no output count` |
 | a plan with no YAML document, or with more than one | no outputs, or the first document | `the plan holds <n> YAML documents` |
@@ -57,12 +57,12 @@ Two general rules stay by design. An unknown source kind or filter word is a blo
 cannot read as pure. A member name `<module>/<descriptor>` names `<module>`, because a content module name can have
 that form.
 
-## YAML: saphyr and Go yaml v4
+## YAML: saphyr and the former reader
 
-The crate loads the text into `saphyr::MarkedYaml` and interprets the tree afterwards. The Go reader interpreted a
-`yaml.Node` tree. The differences do not change the output for a file that kaml writes.
+The crate loads the text into `saphyr::MarkedYaml` and interprets the tree afterwards. The former reader interpreted a
+`yaml.Node` tree of yaml v4. The differences do not change the output for a file that kaml writes.
 
-| Construct | Go `yaml.Node` and the Go accessors | `saphyr` and the port |
+| Construct | The former reader | `saphyr` and the crate |
 | --- | --- | --- |
 | a plain scalar | YAML 1.2 core schema; a boolean must be the text `true` | the core schema; `True` and `TRUE` are also `true` |
 | an empty plain value `key:` | null, read as absent | null, refused |
@@ -75,36 +75,21 @@ The crate loads the text into `saphyr::MarkedYaml` and interprets the tree after
 | several documents | the first document | all documents, refused |
 | a position | none; the accessors never fail | the 1-based line of the node in each refusal |
 
-## Public items
+## Errors
 
-| Item | Go original | Description |
-| --- | --- | --- |
-| `struct Error` | `error` | One refusal or I/O failure. `Display` and `message(&self) -> &str` give the text. |
-| `enum EntryKind { Jar, Link, Placed }` | `ReportEntry.Kind` | The entry kind. `as_str()` gives the YAML word. |
-| `struct FileEntry { path, kind, modules, content_modules, sources }` | `ReportEntry` | One output. The member names have no `/<descriptor>` suffix. |
-| `FileEntry::primary_member(&self) -> Option<&str>` | `PrimaryMember` | The module that the jar is named for: the path when a member confirms it, then the first `modules` member, then the first `contentModules` member. |
-| `struct RecipeSource` | `RecipeSource` | One ordered source with the 13 fields. An absent string field is `None`, and so is an empty `name`. |
-| `RecipeSource::blocker(&self) -> Option<Blocker>` | `Blocker` | Why the source is not data, from its `kind` and `filter`. `None` when it is data. |
-| `enum Blocker` | `Blocker` | The nine blockers. `as_str()` and `Display` give the Go names. |
-| `struct Recipe { file, fragment, entries }` | `Recipe` | One plan. The reader refuses a plan whose head comment states another output count. |
-| `parse_recipe(&Path, &str) -> Result<Recipe, Error>` | `ParseRecipe`, `ParseReport` | Interprets one plan text. |
-| `read_recipes(&[PathBuf]) -> Result<Vec<Recipe>, Error>` | `ReadRecipes` | Reads plan files and directories of `*.plan.yaml`, sorted by the bytes of the path. A directory with no plan is an error. |
-| `struct Distribution` | `Distribution` | The file sizes of a built distribution. `root()`, `files()`, `directories()`, `lookup_from_root(&str) -> Option<u64>`. |
-| `read_distribution(&Path) -> Result<Distribution, Error>` | `ReadDistribution` | Indexes the regular files. It follows a link at the root and no link below it. |
-| `struct Weight { entries, jars, bytes, unjoined, duplicate }` | `Weight` | One row. `balances()`, `+=`, and `-` for a subgroup. |
-| `struct OutputPurity { owner, causes }` | `OutputPurity` | One output. `cause_set()` and `needs_code()`. |
-| `struct Purity` | `Purity` | The run result. The groups are `BTreeMap`s. |
-| `weigh_purity(&[Recipe], Option<&Distribution>) -> Purity` | `WeighPurity` | Classifies and weighs every output. With no distribution, every output is unjoined. |
+Every error is one `anyhow` message. It names the file, and the line and the field when the refusal is about the YAML
+text. Rustdoc states each public item.
 
 `ParseReport`, `ContentReport` and `ReportEntry.LibraryOwner` are not public items. No command reads a packaging report
 of a distribution build now, and a plan has no `module` key on an entry.
 
 ## The fields that the replay reads
 
-The `replay` command of `dev-dist` reads a plan through `read_recipes`. The Go code compares an absent string field
-with `""`. The port states an absent string field as `None`, and `as_deref().unwrap_or("")` gives the Go value.
+The `replay` command of `dev-dist` reads a plan through `read_recipes`. The crate states an absent string field as
+`None`, and `as_deref().unwrap_or("")` gives the empty text. The former replay compared an absent field with `""`.
+The column "Former access" states how the former replay read each field.
 
-| Go access | Rust access |
+| Former access | Crate access |
 | --- | --- |
 | `recipe.Fragment` | `recipe.fragment`, from the first head comment line |
 | `recipe.Entries` | `recipe.entries`. The reader checks the count against the second head comment line. |
@@ -119,5 +104,4 @@ with `""`. The port states an absent string field as `None`, and `as_deref().unw
 | `s.Presigned` | `source.presigned` |
 | `content.RecipeSource{Module: "x"}` in a test | `RecipeSource { module: Some("x".to_owned()), ..RecipeSource::default() }` |
 
-The test `reads_every_source_field_that_the_replay_reads` reads the shapes of the Go replay test plan. The reader also
-reads that complete test plan without a change.
+The test `reads_every_source_field_that_the_replay_reads` reads the shapes of the former replay test plan.

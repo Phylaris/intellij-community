@@ -30,7 +30,7 @@ import com.intellij.openapi.util.Key
 import com.intellij.openapi.util.registry.Registry
 import com.intellij.openapi.wm.impl.DockToolWindowAction
 import com.intellij.platform.ide.productMode.IdeProductMode
-import com.intellij.platform.runtime.product.ProductMode
+import com.intellij.platform.productMode.ProductMode
 import com.intellij.testFramework.LoggedErrorProcessor
 import com.intellij.testFramework.TestLoggerFactory.TestLoggerAssertionError
 import com.intellij.testFramework.UsefulTestCase.assertEmpty
@@ -61,8 +61,10 @@ import org.junit.jupiter.api.Assertions.fail
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.EnumSource
 import org.junit.jupiter.params.provider.ValueSource
 import java.awt.event.KeyEvent
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -114,7 +116,7 @@ class ActionUpdaterTest {
   @ValueSource(booleans = [false, true])
   fun testNonTrivialActionGroupHidesEmptyPopup(lightMode: Boolean): Unit = timeoutRunBlocking {
     application.replaceService(IdeProductMode::class.java, object : IdeProductMode {
-      override val currentMode: ProductMode = if (lightMode) ProductMode.LIGHT else ProductMode.MONOLITH
+      override val currentMode: ProductMode = if (lightMode) ProductMode.LIGHT_REMOTE else ProductMode.MONOLITH
     }, disposable)
 
     val group = NonTrivialActionGroup()
@@ -126,10 +128,11 @@ class ActionUpdaterTest {
     assertFalse(presentations.getPresentation(group).isEnabled)
   }
 
-  @Test
-  fun testLightModeSkipsIncompatibleActionUpdate(): Unit = timeoutRunBlocking {
+  @ParameterizedTest(name = "mode={0}")
+  @EnumSource(value = ProductMode::class, names = ["LIGHT_REMOTE", "LIGHT_MONOLITH"])
+  fun testLightModeSkipsIncompatibleActionUpdate(mode: ProductMode): Unit = timeoutRunBlocking {
     application.replaceService(IdeProductMode::class.java, object : IdeProductMode {
-      override val currentMode: ProductMode = ProductMode.LIGHT
+      override val currentMode: ProductMode = mode
     }, disposable)
 
     val childUpdated = AtomicBoolean()
@@ -581,6 +584,27 @@ class ActionUpdaterTest {
                                      ActionPlaces.UNKNOWN, ActionUiKind.NONE, fastTrack = false)
     }
     assertEquals(1, actions.size)
+  }
+
+  @Test
+  fun testSkipOperationInNestedUpdateDoesNotStopChildrenUpdate() = timeoutRunBlocking {
+    val updated = ConcurrentHashMap.newKeySet<Int>()
+    val children = (0 until 3).map { index ->
+      newAction(ActionUpdateThread.BGT) {
+        updated.add(index)
+        throw SkipOperation("update")
+      }
+    }
+    // `NonTrivialActionGroup.update` expands its own children with `ActionGroupUtil.isGroupEmpty`
+    val group = NonTrivialActionGroup().apply {
+      addAll(children)
+      templatePresentation.isPopupGroup = true
+    }
+    withContext(Dispatchers.EDT) {
+      Utils.expandActionGroupSuspend(DefaultActionGroup(group), PresentationFactory(), DataContext.EMPTY_CONTEXT,
+                                     ActionPlaces.UNKNOWN, ActionUiKind.NONE, fastTrack = false)
+    }
+    assertEquals(setOf(0, 1, 2), updated)
   }
 
   @Test

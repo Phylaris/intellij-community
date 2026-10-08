@@ -1,11 +1,14 @@
 // Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.jetbrains.python.packaging.toolwindow
 
+import com.intellij.python.pyproject.model.evolution.currentPythonInterpreter
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.roots.ModuleRootEvent
+import com.intellij.openapi.roots.ModuleRootListener
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
@@ -13,7 +16,6 @@ import com.intellij.openapi.components.serviceAsync
 import com.intellij.openapi.options.ex.SingleConfigurableEditor
 import com.intellij.openapi.project.Project
 import com.jetbrains.python.sdk.ModuleOrProject
-import com.intellij.openapi.projectRoots.Sdk
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.openapi.vfs.VirtualFileManager
@@ -31,7 +33,9 @@ import com.jetbrains.python.packaging.common.PythonPackage
 import com.jetbrains.python.packaging.common.PythonPackageDetails
 import com.jetbrains.python.packaging.common.PythonPackageManagementListener
 import com.intellij.python.sdk.backend.asItem
-import com.intellij.python.sdk.backend.pythonInterpreterAsync
+import com.intellij.openapi.module.Module
+import com.intellij.python.pyproject.model.evolution.evoPyProjects
+import com.intellij.python.sdk.backend.PythonInterpreter
 import com.jetbrains.python.packaging.common.PythonRepositoryPackageSpecification
 import com.jetbrains.python.packaging.conda.CondaPackage
 import com.intellij.python.pyproject.PyDependencyGroup
@@ -49,7 +53,6 @@ import com.jetbrains.python.showProcessExecutionErrorDialog
 import com.intellij.python.requirements.pyRequirement
 import com.jetbrains.python.packaging.repository.PyPackageRepositories
 import com.intellij.python.pyproject.model.evolution.EvoPyProjectModel
-import com.intellij.python.sdk.backend.getSdkAPI
 import com.jetbrains.python.packaging.repository.PyPackageRepository
 import com.jetbrains.python.packaging.repository.PyRepositoriesList
 import com.jetbrains.python.packaging.repository.checkValid
@@ -65,6 +68,7 @@ import com.jetbrains.python.packaging.toolwindow.model.PyPackagesViewData
 import com.jetbrains.python.packaging.toolwindow.model.RequirementPackage
 import com.jetbrains.python.packaging.toolwindow.model.UndeclaredPackagesGroup
 import com.jetbrains.python.packaging.toolwindow.model.WorkspaceMember
+import com.jetbrains.python.sdk.pySdkAdditionalData
 import com.jetbrains.python.statistics.PythonPackagesIdsHolder.Companion.PYTHON_PACKAGE_DELETED
 import com.jetbrains.python.statistics.PythonPackagesIdsHolder.Companion.PYTHON_PACKAGE_INSTALLED
 import kotlinx.coroutines.CoroutineScope
@@ -80,7 +84,7 @@ import org.jetbrains.annotations.Nls
 @Service(Service.Level.PROJECT)
 internal class PyPackagingToolWindowService(val project: Project, val serviceScope: CoroutineScope) : Disposable {
   // Written on EDT when the tool window builds its content, read from every background coroutine
-  // here. Volatile like `sdkContext` / `installedPackages`, otherwise a refresh already in flight
+  // here. Volatile like `interpreterContext` / `installedPackages`, otherwise a refresh already in flight
   // when the panel is attached can still observe `null` and silently drop its render.
   @Volatile private var toolWindowPanel: PyPackagingToolWindowPanel? = null
   @Volatile private var installedPackages: List<DisplayablePackage> = emptyList()
@@ -106,29 +110,30 @@ internal class PyPackagingToolWindowService(val project: Project, val serviceSco
   // time. Listeners are project/UI-scoped and fire on the EDT.
   private val installStateListeners = java.util.concurrent.CopyOnWriteArrayList<Runnable>()
 
-  /** `true` while an install keyed by exactly [key] is running on [sdk] (verbatim key — see [packageKey]). */
-  fun isInstalling(sdk: Sdk, key: String): Boolean = PyActiveInstalls.forSdk(sdk).isInstalling(key)
+  /** `true` while an install with the exact [key] runs on [interpreter]. See [packageKey]. */
+  fun isInstalling(interpreter: PythonInterpreter, key: String): Boolean = PyActiveInstalls.of(interpreter).isInstalling(key)
 
-  /** `true` while a package named [packageName] (any version) is being installed on [sdk]. */
-  fun isPackageInstalling(sdk: Sdk, packageName: String): Boolean = PyActiveInstalls.forSdk(sdk).isPackageInstalling(packageName)
+  /** `true` while a package named [packageName] (any version) is being installed on [interpreter]. */
+  fun isPackageInstalling(interpreter: PythonInterpreter, packageName: String): Boolean =
+    PyActiveInstalls.of(interpreter).isPackageInstalling(packageName)
 
   /**
-   * Records [key] as an active install on [sdk]. Returns `false` if already recorded (rejects a rapid re-trigger).
+   * Records [key] as an active install on [interpreter]. Returns `false` if already recorded (rejects a rapid re-trigger).
    *
    * [traceUuid] — uuid of the trace the install runs in, for callers that own one (see [installPackage]'s
    * `trace` parameter). Stored so a surface showing the install as in progress can point the user at the
    * running command's output; cleared again by [unmarkInstalling].
    */
-  fun markInstalling(sdk: Sdk, key: String, traceUuid: String? = null): Boolean =
-    PyActiveInstalls.forSdk(sdk).mark(key, traceUuid).also { if (it) fireInstallStateChanged() }
+  fun markInstalling(interpreter: PythonInterpreter, key: String, traceUuid: String? = null): Boolean =
+    PyActiveInstalls.of(interpreter).mark(key, traceUuid).also { if (it) fireInstallStateChanged() }
 
-  /** Clears [key] on [sdk]; must run in a `finally` / completion handler so a cancelled install can't leak it. */
-  fun unmarkInstalling(sdk: Sdk, key: String) {
-    if (PyActiveInstalls.forSdk(sdk).unmark(key)) fireInstallStateChanged()
+  /** Clears [key] on [interpreter]; must run in a `finally` / completion handler so a cancelled install can't leak it. */
+  fun unmarkInstalling(interpreter: PythonInterpreter, key: String) {
+    if (PyActiveInstalls.of(interpreter).unmark(key)) fireInstallStateChanged()
   }
 
-  /** Uuid of the trace of the install running under [key] on [sdk], or `null` if unknown or nothing is running. */
-  fun installTraceUuid(sdk: Sdk, key: String): String? = PyActiveInstalls.forSdk(sdk).traceUuid(key)
+  /** Uuid of the trace of the install running under [key] on [interpreter], or `null` if unknown or nothing is running. */
+  fun installTraceUuid(interpreter: PythonInterpreter, key: String): String? = PyActiveInstalls.of(interpreter).traceUuid(key)
 
   /**
    * Subscribes [listener] to any change of the active-installations state; it is invoked on the EDT
@@ -149,18 +154,34 @@ internal class PyPackagingToolWindowService(val project: Project, val serviceSco
   }
   // -----------------------------------------------------------------------------------------------
 
-  private data class SdkContext(
-    val sdk: Sdk,
+  private data class InterpreterContext(
+    val interpreter: PythonInterpreter,
     val managerUI: PythonPackageManagerUI
   ) {
     val manager: PythonPackageManager
       get() = managerUI.manager
   }
 
-  @Volatile private var sdkContext: SdkContext? = null
+  @Volatile private var interpreterContext: InterpreterContext? = null
 
-  internal val currentSdk: Sdk?
-    get() = sdkContext?.sdk
+  /** The interpreter this tool window shows, or `null` when it shows none. */
+  internal val currentInterpreter: PythonInterpreter?
+    get() = interpreterContext?.interpreter
+
+  /** The package manager of [currentInterpreter]. A reader uses it instead of building its own. */
+  internal val currentPackageManager: PythonPackageManager?
+    get() = interpreterContext?.manager
+
+  /**
+   * The module of the first Python project that uses [currentInterpreter], or `null` when none does.
+   *
+   * An interpreter can serve several projects. The install dialog then targets the first one, unless the user picks
+   * a module.
+   */
+  internal suspend fun findCurrentInterpreterModule(): Module? {
+    val interpreter = currentInterpreter ?: return null
+    return project.evoPyProjects().firstOrNull { it.interpreter == interpreter }?.pyProject?.residesOnModule
+  }
 
 
   private val invalidRepositories: List<PyInvalidRepositoryViewData>
@@ -173,28 +194,27 @@ internal class PyPackagingToolWindowService(val project: Project, val serviceSco
   fun initialize(toolWindowPanel: PyPackagingToolWindowPanel) {
     this.toolWindowPanel = toolWindowPanel
     serviceScope.launch(Dispatchers.IO) {
-      @Suppress("DEPRECATION")
-      val sdkToOpenOn = project.service<EvoPyProjectModel>().interpreter.value?.getSdkAPI()
-      val boundSdk = sdkContext?.sdk
-      if (shouldReplayBoundSdk(boundSdk, sdkToOpenOn)) {
-        checkNotNull(boundSdk)
-        publishSdkToPanel(boundSdk)
+      val interpreterToOpenOn = project.currentPythonInterpreter()
+      val boundInterpreter = interpreterContext?.interpreter
+      if (shouldReplayBoundInterpreter(boundInterpreter, interpreterToOpenOn)) {
+        checkNotNull(boundInterpreter)
+        publishInterpreterToPanel(boundInterpreter)
         withContext(Dispatchers.EDT) {
           toolWindowPanel.contentVisible = true
           // `installedPackages` is already in memory from the earlier binding, so replaying the
           // active query paints it into the new panel without a second package-manager round-trip.
           // Its terminal `resetSearch` / `showSearchResult` also clears the loading state that
-          // `publishSdkToPanel` just raised.
+          // `publishInterpreterToPanel` just raised.
           handleSearch(currentQuery)
         }
         return@launch
       }
-      initForSdk(sdkToOpenOn)
+      initForInterpreter(interpreterToOpenOn)
     }
   }
 
   suspend fun detailsForPackage(selectedPackage: DisplayablePackage): PythonPackageDetails? {
-    val context = sdkContext ?: return null
+    val context = interpreterContext ?: return null
     val packageManager = context.manager
 
     return withContext(Dispatchers.IO) {
@@ -282,7 +302,7 @@ internal class PyPackagingToolWindowService(val project: Project, val serviceSco
   fun handleSearch(query: String) {
     currentQuery = query
 
-    val context = sdkContext ?: return
+    val context = interpreterContext ?: return
     val packageManager = context.manager
     val prevSelected = toolWindowPanel?.getSelectedPackage()
 
@@ -369,7 +389,7 @@ internal class PyPackagingToolWindowService(val project: Project, val serviceSco
 
         if (isActive) {
           withContext(Dispatchers.EDT) {
-            toolWindowPanel?.resetSearch(installedPackages, currentSdk)
+            toolWindowPanel?.resetSearch(installedPackages, currentInterpreter)
             prevSelected?.name?.let { toolWindowPanel?.selectPackageName(it) }
           }
         }
@@ -390,7 +410,7 @@ internal class PyPackagingToolWindowService(val project: Project, val serviceSco
     dependencyGroup: PyDependencyGroup? = null,
     trace: TraceContext? = null,
   ) {
-    val context = sdkContext ?: return
+    val context = interpreterContext ?: return
     val managerUI = context.managerUI
     val module = workspaceMember?.let { context.manager.workspaceSupport?.resolveModule(it) }
 
@@ -407,7 +427,7 @@ internal class PyPackagingToolWindowService(val project: Project, val serviceSco
   }
 
   suspend fun installPackage(pkg: PythonPackage, options: List<String> = emptyList()) {
-    val context = sdkContext ?: return
+    val context = interpreterContext ?: return
     withContext(TraceContext(message("trace.context.packaging.tool.window.install"))) {
       val installRequest = context.manager.findPackageSpecification(pkg.name, pkg.version)?.toInstallRequest() ?: return@withContext
       PythonPackagesToolwindowStatisticsCollector.installPackageEvent.log(project)
@@ -422,7 +442,7 @@ internal class PyPackagingToolWindowService(val project: Project, val serviceSco
   }
 
   suspend fun deletePackage(vararg selectedPackages: InstalledPackage) {
-    val context = sdkContext ?: return
+    val context = interpreterContext ?: return
     val managerUI = context.managerUI
 
     withContext(TraceContext(message("trace.context.packaging.tool.window.delete"))) {
@@ -458,34 +478,34 @@ internal class PyPackagingToolWindowService(val project: Project, val serviceSco
   }
 
   /**
-   * Pushes everything the view derives from the SDK alone: header interpreter path, package-list
-   * header name and loading state, module list selection. Extracted from [initForSdk] because a
-   * panel can be attached *after* the service is already bound to that SDK, in which case
-   * [initForSdk] short-circuits and only this part has to be replayed — see [initialize]
-   * (PY-91300). The presentation is built off EDT: it probes SDK validity.
+   * Pushes everything the view derives from the interpreter alone: header interpreter path, package-list
+   * header name and loading state, module list selection. Extracted from [initForInterpreter] because a
+   * panel can be attached *after* the service is already bound to that interpreter, in which case
+   * [initForInterpreter] short-circuits and only this part has to be replayed — see [initialize]
+   * (PY-91300).
    */
-  private suspend fun publishSdkToPanel(sdk: Sdk) {
-    val interpreterPath = sdk.pythonInterpreterAsync().asItem().fullName
+  private suspend fun publishInterpreterToPanel(interpreter: PythonInterpreter) {
+    val item = interpreter.asItem()
     withContext(Dispatchers.EDT) {
       toolWindowPanel?.let {
-        it.startLoadingSdk(sdk.name)
-        it.setInterpreterPath(interpreterPath)
-        it.syncSdkControllerSelection(sdk)
+        it.startLoadingSdk(item.name)
+        it.setInterpreterPath(item.fullName)
+        it.syncSdkControllerSelection(interpreter)
       }
     }
   }
 
   @ApiStatus.Internal
-  suspend fun initForSdk(sdk: Sdk?) {
+  suspend fun initForInterpreter(interpreter: PythonInterpreter?) {
     if (project.isDisposed) return
-    if (sdk != null && sdk == currentSdk) {
+    if (interpreter != null && interpreter == currentInterpreter) {
       return
     }
 
-    val previousSdk = currentSdk
+    val previousInterpreter = currentInterpreter
 
-    if (sdk == null) {
-      sdkContext = null
+    if (interpreter == null) {
+      interpreterContext = null
       withContext(Dispatchers.EDT) {
         toolWindowPanel?.let {
           it.packageListController.setLoadingState(false)
@@ -497,17 +517,17 @@ internal class PyPackagingToolWindowService(val project: Project, val serviceSco
       return
     }
 
-    publishSdkToPanel(sdk)
+    publishInterpreterToPanel(interpreter)
 
-    sdkContext = SdkContext(
-      sdk = sdk,
-      managerUI = PythonPackageManagerUI.forSdk(project, sdk)
+    interpreterContext = InterpreterContext(
+      interpreter = interpreter,
+      managerUI = PythonPackageManagerUI.forPythonInterpreter(project, interpreter)
     )
 
     withContext(Dispatchers.EDT) {
       toolWindowPanel?.let {
-        it.contentVisible = currentSdk != null
-        if (currentSdk == null || currentSdk != previousSdk) {
+        it.contentVisible = currentInterpreter != null
+        if (currentInterpreter == null || currentInterpreter != previousInterpreter) {
           it.setEmpty()
         }
       }
@@ -558,7 +578,30 @@ internal class PyPackagingToolWindowService(val project: Project, val serviceSco
 
   private fun subscribeToChanges() {
     followSharedInterpreter()
+    followPackageManager()
     subscribeToPackageManagementChanges()
+  }
+
+  /**
+   * Rebinds this view when the bound manager no longer [PythonPackageManager.matchesSdk] its interpreter.
+   * The commit that changes the root dependency file of the interpreter fires [ModuleRootListener.rootsChanged].
+   * The rebind runs off the event thread.
+   */
+  private fun followPackageManager() {
+    project.messageBus.connect(serviceScope).subscribe(ModuleRootListener.TOPIC, object : ModuleRootListener {
+      override fun rootsChanged(event: ModuleRootEvent) {
+        val context = interpreterContext ?: return
+        if (context.manager.matchesSdk()) return
+        serviceScope.launch(Dispatchers.IO + NON_INTERACTIVE_ROOT_TRACE_CONTEXT) { rebind(context) }
+      }
+    })
+  }
+
+  /** Binds this view to the current manager of the interpreter of [context], while [context] is still the bound one. */
+  private suspend fun rebind(context: InterpreterContext) {
+    if (project.isDisposed || interpreterContext !== context) return
+    interpreterContext = InterpreterContext(context.interpreter, PythonPackageManagerUI.forPythonInterpreter(project, context.interpreter))
+    refreshInstalledPackages()
   }
 
   /**
@@ -573,8 +616,7 @@ internal class PyPackagingToolWindowService(val project: Project, val serviceSco
    */
   private fun followSharedInterpreter() {
     serviceScope.launch {
-      @Suppress("DEPRECATION")
-      project.service<EvoPyProjectModel>().interpreter.collect { initForSdk(it?.getSdkAPI()) }
+      EvoPyProjectModel.getInstance(project).interpreter.collect { initForInterpreter(it) }
     }
   }
 
@@ -582,18 +624,18 @@ internal class PyPackagingToolWindowService(val project: Project, val serviceSco
   private fun subscribeToPackageManagementChanges() {
     ApplicationManager.getApplication().messageBus.connect(serviceScope)
       .subscribe(PythonPackageManager.PACKAGE_MANAGEMENT_TOPIC, object : PythonPackageManagementListener {
-        override fun packagesChanged(sdk: Sdk) {
-          val context = sdkContext ?: return
-          if (context.sdk == sdk) {
+        override fun packagesChanged(interpreter: PythonInterpreter) {
+          val context = interpreterContext ?: return
+          if (context.interpreter == interpreter) {
             serviceScope.launch(Dispatchers.IO + NON_INTERACTIVE_ROOT_TRACE_CONTEXT) {
               refreshInstalledPackages()
             }
           }
         }
 
-        override fun outdatedPackagesChanged(sdk: Sdk) {
-          val context = sdkContext ?: return
-          if (context.sdk == sdk) {
+        override fun outdatedPackagesChanged(interpreter: PythonInterpreter) {
+          val context = interpreterContext ?: return
+          if (context.interpreter == interpreter) {
             serviceScope.launch(Dispatchers.IO + NON_INTERACTIVE_ROOT_TRACE_CONTEXT) {
               refreshInstalledPackages(showIndicator = false)
             }
@@ -607,7 +649,7 @@ internal class PyPackagingToolWindowService(val project: Project, val serviceSco
 
   suspend fun refreshInstalledPackages(showIndicator: Boolean = true) {
     if (project.isDisposed) return
-    val context = sdkContext ?: return
+    val context = interpreterContext ?: return
     
     if (showIndicator) {
       showRefreshIndicatorIfNeeded()
@@ -635,7 +677,7 @@ internal class PyPackagingToolWindowService(val project: Project, val serviceSco
     }
   }
 
-  private suspend fun refreshInstalledPackagesImpl(context: SdkContext) {
+  private suspend fun refreshInstalledPackagesImpl(context: InterpreterContext) {
     val result = buildDisplayablePackages(ModuleOrProject.ProjectOnly(project), context.manager)
     if (result.unavailable != null) {
       showPackagesUnavailable(result.unavailable, context.manager)
@@ -689,7 +731,7 @@ internal class PyPackagingToolWindowService(val project: Project, val serviceSco
   }
 
   fun reloadPackages() {
-    val context = sdkContext
+    val context = interpreterContext
     if (context == null) {
       serviceScope.launch(Dispatchers.EDT) {
         toolWindowPanel?.packageListController?.setLoadingState(false)
@@ -698,7 +740,7 @@ internal class PyPackagingToolWindowService(val project: Project, val serviceSco
       return
     }
     serviceScope.launch(Dispatchers.Default + TraceContext(message("trace.context.packaging.tool.window"), serviceScope)) {
-      withContext(TraceContext(message("trace.context.packaging.tool.window.sdk.reload", context.sdk.name))) {
+      withContext(TraceContext(message("trace.context.packaging.tool.window.sdk.reload", context.interpreter.asItem().name))) {
         context.managerUI.reloadPackagesBackground()
         refreshInstalledPackages()
       }
@@ -803,15 +845,15 @@ internal class PyPackagingToolWindowService(val project: Project, val serviceSco
  *
  * The service is a project service and outlives the tool window, so it can already be bound by the
  * time a panel is built — the install dialog and the pyproject.toml "+ Add package" inlay call
- * `initForSdk` directly, and [EvoPyProjectModel.interpreter] keeps that binding
- * fresh. Handing the same SDK back to `initForSdk` would hit its "same SDK" short-circuit and the
+ * `initForInterpreter` directly, and [EvoPyProjectModel.interpreter] keeps that binding
+ * fresh. Handing the same interpreter back to `initForInterpreter` would hit its "same interpreter" short-circuit and the
  * new panel would learn nothing at all: no path in the header, no module selection, empty package
  * tree. Binding and rendering are separate concerns, so the rendering half is replayed explicitly.
  *
- * Replaying is only right while the binding agrees with [sdkToOpenOn]. A binding left over from
+ * Replaying is only right while the binding agrees with [interpreterToOpenOn]. A binding left over from
  * another subproject has to be replaced instead, or the tool window would open on a foreign
- * environment — and re-binding is safe there precisely because the SDKs differ, so `initForSdk` has
+ * environment — and re-binding is safe there precisely because the interpreters differ, so `initForInterpreter` has
  * real work to do (PY-91300).
  */
-internal fun shouldReplayBoundSdk(boundSdk: Sdk?, sdkToOpenOn: Sdk?): Boolean =
-  boundSdk != null && (sdkToOpenOn == null || sdkToOpenOn == boundSdk)
+internal fun shouldReplayBoundInterpreter(boundInterpreter: PythonInterpreter?, interpreterToOpenOn: PythonInterpreter?): Boolean =
+  boundInterpreter != null && (interpreterToOpenOn == null || interpreterToOpenOn == boundInterpreter)

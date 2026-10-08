@@ -5,8 +5,7 @@
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-
-use filetime::FileTime;
+use std::time::SystemTime;
 
 #[cfg(test)]
 mod tests;
@@ -57,24 +56,19 @@ pub fn copy_with_attributes(source: &Path, destination: &Path) -> io::Result<()>
             format!("not a regular file: {}", source.display()),
         ));
     }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-
-        let mode = metadata.permissions().mode();
-        if mode & 0o7000 != 0 {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                format!(
-                    "unsupported mode {:o} of {}: a setuid, setgid or sticky bit",
-                    mode & 0o7777,
-                    source.display()
-                ),
-            ));
-        }
+    if has_special_bits(&metadata) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "unsupported mode {:o} of {}: a setuid, setgid or sticky bit",
+                mode_bits(&metadata) & 0o7777,
+                source.display()
+            ),
+        ));
     }
+    let modified = metadata.modified().map_err(|error| with_path(&error, source))?;
     clone_or_copy(source, destination)?;
-    set_modification_time(destination, FileTime::from_last_modification_time(&metadata)).map_err(|error| with_path(&error, destination))
+    set_modification_time(destination, modified).map_err(|error| with_path(&error, destination))
 }
 
 /// Copies `source` to `destination` with [`clone_or_copy`], then sets the declared mode.
@@ -83,8 +77,7 @@ pub fn copy_with_attributes(source: &Path, destination: &Path) -> io::Result<()>
 /// On Windows the function sets only the read-only attribute: the file is read-only when the owner write bit is off.
 pub fn copy_with_mode(source: &Path, destination: &Path, executable: bool, mode: Option<u32>) -> io::Result<()> {
     clone_or_copy(source, destination)?;
-    let mode = mode.map_or(conventional_mode(executable), |mode| mode & 0o777);
-    set_mode(destination, mode).map_err(|error| with_path(&error, destination))
+    set_mode(destination, mode.map_or(conventional_mode(executable), |mode| mode & 0o777))
 }
 
 /// Replaces the existing regular file `destination` with a copy of `source`.
@@ -113,8 +106,7 @@ pub fn set_distribution_file_mode(path: &Path, executable: bool, mode: Option<u3
     if cfg!(windows) {
         return Ok(());
     }
-    let mode = mode.map_or(conventional_mode(executable), |mode| mode & 0o777);
-    set_mode(path, mode).map_err(|error| with_path(&error, path))
+    set_mode(path, mode.map_or(conventional_mode(executable), |mode| mode & 0o777))
 }
 
 /// Returns 0o755 for an executable file and 0o644 for all other files.
@@ -122,43 +114,58 @@ pub const fn conventional_mode(executable: bool) -> u32 {
     if executable { 0o755 } else { 0o644 }
 }
 
-/// Creates the directory `path` and its missing parents. Each directory that the function creates gets the mode 0755.
+/// Sets the permission bits `mode` of `path`. An error names the path.
 ///
-/// The mode does not depend on the umask, because the inventory of a payload records the mode of each directory.
-/// [`fs::create_dir_all`] gives 0777 without the umask bits, so the umask 002 gives 0775. The Go tools called
-/// `os.MkdirAll(path, 0o755)`. It gives the result of this function when the umask has no bit outside 022.
-///
-/// A directory that exists keeps its mode. On Windows, the function only creates the directories.
-pub fn create_dirs_0755(path: &Path) -> io::Result<()> {
+/// On Windows the function sets only the read-only attribute from the owner write bit. It reads the attributes of
+/// `path` itself and does not follow a link. A copy on Windows keeps the read-only attribute of the
+/// source, and this call clears it again.
+pub fn set_mode(path: &Path, mode: u32) -> io::Result<()> {
     #[cfg(unix)]
-    let missing = {
-        let mut missing = Vec::new();
-        for directory in path.ancestors() {
-            if directory.as_os_str().is_empty() || fs::exists(directory).map_err(|error| with_path(&error, directory))? {
-                break;
-            }
-            missing.push(directory);
-        }
-        missing
+    let result = {
+        use std::os::unix::fs::PermissionsExt;
+
+        fs::set_permissions(path, fs::Permissions::from_mode(mode))
     };
-    fs::create_dir_all(path).map_err(|error| with_path(&error, path))?;
-    #[cfg(unix)]
-    for directory in missing {
-        set_mode(directory, 0o755).map_err(|error| with_path(&error, directory))?;
-    }
-    Ok(())
+    #[cfg(not(unix))]
+    let result = fs::symlink_metadata(path).and_then(|metadata| {
+        let mut permissions = metadata.permissions();
+        permissions.set_readonly(mode & 0o200 == 0);
+        fs::set_permissions(path, permissions)
+    });
+    result.map_err(|error| with_path(&error, path))
 }
 
-/// Creates the symbolic link `link` with the text `target`, as Go `os.Symlink` does.
+/// Reports whether the mode of an entry has the setuid, setgid or sticky bit. NTFS stores none of them.
+pub fn has_special_bits(metadata: &fs::Metadata) -> bool {
+    mode_bits(metadata) & 0o7000 != 0
+}
+
+/// The mode of an entry. NTFS stores no POSIX mode, so the value is 0 on Windows.
+#[cfg_attr(not(unix), expect(clippy::missing_const_for_fn, reason = "the Unix variant reads the mode"))]
+fn mode_bits(metadata: &fs::Metadata) -> u32 {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        metadata.permissions().mode()
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = metadata;
+        0
+    }
+}
+
+/// Creates the symbolic link `link` with the text `target`.
 ///
 /// A relative target starts at the directory of the link. The target does not have to exist.
 /// On Unix a link has no kind, so the function ignores `target_is_directory`.
 ///
 /// On Windows a link is a directory link or a file link, and the system follows it only as that kind. So the function
-/// creates a directory link when `target_is_directory` is true, and a file link in the other case. Go `os.Symlink`
-/// read the kind from the target on the disk. The function also replaces each `/` in the target with `\`, as Go does.
+/// creates a directory link when `target_is_directory` is true, and a file link in the other case. The function also
+/// replaces each `/` in the target with `\`.
 ///
-/// An error has the text of the Go `os.LinkError`: `symlink <target> <link>: <cause>`.
+/// An error reads `symlink <target> <link>: <cause>`.
 pub fn symlink(target: &Path, link: &Path, target_is_directory: bool) -> io::Result<()> {
     #[cfg(unix)]
     let created = {
@@ -177,10 +184,10 @@ pub fn symlink(target: &Path, link: &Path, target_is_directory: bool) -> io::Res
     created.map_err(|error| io::Error::new(error.kind(), format!("symlink {} {}: {error}", target.display(), link.display())))
 }
 
-/// Returns the absolute form of `path`, as Go `filepath.Abs` does.
+/// Returns the absolute form of `path`.
 ///
 /// The function joins a relative path to the current directory. On Unix it then removes `.` and `..` lexically.
-/// On Windows it uses [`std::path::absolute`], which calls `GetFullPathNameW`, as Go does.
+/// On Windows it uses [`std::path::absolute`], which calls `GetFullPathNameW`.
 pub fn absolute_path(path: &Path) -> io::Result<PathBuf> {
     if cfg!(windows) {
         return std::path::absolute(path).map_err(|error| with_path(&error, path));
@@ -201,17 +208,16 @@ pub fn real_path(path: &Path) -> io::Result<PathBuf> {
     resolve_links(&absolute_path(path)?)
 }
 
-/// Returns `path` with every link and junction resolved, as Go `filepath.EvalSymlinks` does.
+/// Returns `path` with every link and junction resolved.
 ///
 /// The result is absolute. On Unix, a `..` after a link goes to the parent of the link target. On Windows, the system
 /// removes a `..` lexically before it follows a link, so `link\..` is the directory that holds `link`.
 ///
-/// On macOS, each name of the result has the case that the file system stores. The Go original kept the case of the
-/// input.
+/// On macOS, each name of the result has the case that the file system stores.
 ///
 /// On Windows, [`fs::canonicalize`] asks `GetFinalPathNameByHandleW` for the final path, which supports a long path
 /// and follows a junction. The function then removes the `\\?\` prefix. It does not use `dunce::canonicalize`.
-/// For a path longer than `MAX_PATH`, `dunce` keeps the prefix, and the Go original removes it from every path.
+/// For a path longer than `MAX_PATH`, `dunce` keeps the prefix, and this function removes it from every path.
 #[expect(clippy::disallowed_methods, reason = "the one call of fs::canonicalize, which removes the prefix")]
 pub fn resolve_links(path: &Path) -> io::Result<PathBuf> {
     let resolved = fs::canonicalize(path).map_err(|error| with_path(&error, path))?;
@@ -240,7 +246,7 @@ fn strip_extended_path_prefix(path: PathBuf) -> PathBuf {
     path
 }
 
-/// Removes `.` and `..` lexically, as Go `filepath.Clean` does for an absolute Unix path.
+/// Removes `.` and `..` lexically from an absolute Unix path.
 ///
 /// `Path::components` already drops a `.` that is not the first component, and an absolute path has no first `.`.
 /// A `..` at the root stays at the root, because `PathBuf::pop` does not remove the root.
@@ -272,37 +278,27 @@ fn with_backslashes(path: &Path) -> PathBuf {
     PathBuf::from(OsString::from_wide(&units))
 }
 
+/// Sets the modification time through a handle that asks for no write access.
+///
+/// The copy can be read-only, and the owner of a file sets its times through any handle.
 #[cfg(not(windows))]
-fn set_modification_time(path: &Path, time: FileTime) -> io::Result<()> {
-    filetime::set_file_mtime(path, time)
+fn set_modification_time(path: &Path, time: SystemTime) -> io::Result<()> {
+    fs::File::open(path)?.set_modified(time)
 }
 
-/// Sets the modification time through a handle that has only the right to write the attributes, as Go `os.Chtimes`
-/// does.
+/// Sets the modification time through a handle that has only the right to write the attributes.
 ///
-/// `CopyFileExW` gives the copy the read-only attribute of the source. A handle with write access cannot open a
-/// read-only file, and `filetime` asks for write access.
+/// `CopyFileExW` gives the copy the read-only attribute of the source, and a handle with write access cannot open a
+/// read-only file. `File::set_modified` calls `SetFileTime` on the handle, which needs only this right.
 #[cfg(windows)]
-fn set_modification_time(path: &Path, time: FileTime) -> io::Result<()> {
+fn set_modification_time(path: &Path, time: SystemTime) -> io::Result<()> {
     use std::os::windows::fs::OpenOptionsExt;
 
     const FILE_WRITE_ATTRIBUTES: u32 = 0x0100;
-    let file = fs::OpenOptions::new().access_mode(FILE_WRITE_ATTRIBUTES).open(path)?;
-    filetime::set_file_handle_times(&file, None, Some(time))
-}
-
-#[cfg(unix)]
-fn set_mode(path: &Path, mode: u32) -> io::Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-
-    fs::set_permissions(path, fs::Permissions::from_mode(mode))
-}
-
-#[cfg(not(unix))]
-fn set_mode(path: &Path, mode: u32) -> io::Result<()> {
-    let mut permissions = fs::metadata(path)?.permissions();
-    permissions.set_readonly(mode & 0o200 == 0);
-    fs::set_permissions(path, permissions)
+    fs::OpenOptions::new()
+        .access_mode(FILE_WRITE_ATTRIBUTES)
+        .open(path)?
+        .set_modified(time)
 }
 
 fn with_path(error: &io::Error, path: &Path) -> io::Error {

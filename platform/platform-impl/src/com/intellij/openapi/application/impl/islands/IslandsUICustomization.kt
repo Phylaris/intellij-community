@@ -335,11 +335,6 @@ class IslandsUICustomization : InternalUICustomization() {
 
   private fun applyMissingKeys() {
     val uiDefaults = UIManager.getLookAndFeelDefaults()
-    if (uiDefaults["OnOffButtonUI"] == null) {
-      // Support `ide.ui.theme.custom.islands` advanced settings
-      uiDefaults["OnOffButtonUI"] = "com.intellij.ide.ui.laf.darcula.ui.IslandsOnOffButtonUI"
-    }
-
     if (IslandsState.isCustomEnabled()) {
       uiDefaults["MainToolbar.borderColor"] = Gray.TRANSPARENT
       uiDefaults["ToolWindow.borderColor"] = Gray.TRANSPARENT
@@ -672,6 +667,7 @@ class IslandsUICustomization : InternalUICustomization() {
 
   private fun configureSearchReplaceComponent(component: EditorHeaderComponent, extraTopBorder: Any?): JComponent {
     val wrapper = SearchReplaceWrapper(component)
+    SearchReplaceComponentTracker(wrapper)
     wrapper.putClientProperty("SearchComponent", component)
     if (extraTopBorder != null) {
       wrapper.putClientProperty("extraTopBorder", extraTopBorder)
@@ -851,7 +847,7 @@ class IslandsUICustomization : InternalUICustomization() {
 
   override fun shouldPaintEditorTabsBottomBorder(editorCompositePanel: JComponent): Boolean {
     if (isManyIslandEnabled && !isBreadcrumbsAbove) {
-      return UIUtil.findComponentOfType(editorCompositePanel, SearchReplaceWrapper::class.java) == null
+      return EditorSearchComponentState.get(editorCompositePanel)?.hasSearchComponents != true
     }
     return true
   }

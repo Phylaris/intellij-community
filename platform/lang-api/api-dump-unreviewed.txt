@@ -188,37 +188,6 @@ c:com.intellij.application.options.codeStyle.properties.WrapOnTypingAccessor
 - p:parseString(java.lang.String):java.lang.Boolean
 - p:toExternal(java.lang.Integer):java.lang.Boolean
 - p:valueToString(java.lang.Boolean):java.lang.String
-f:com.intellij.build.FilePosition
-- <init>(java.io.File,I,I):V
-- <init>(java.io.File,I,I,I,I):V
-- equals(java.lang.Object):Z
-com.intellij.build.events.FinishEvent
-- a:getResult():com.intellij.build.events.EventResult
-e:com.intellij.build.events.MessageEvent$Kind
-- sf:ERROR:com.intellij.build.events.MessageEvent$Kind
-- sf:INFO:com.intellij.build.events.MessageEvent$Kind
-- sf:SIMPLE:com.intellij.build.events.MessageEvent$Kind
-- sf:STATISTICS:com.intellij.build.events.MessageEvent$Kind
-- sf:WARNING:com.intellij.build.events.MessageEvent$Kind
-- s:valueOf(java.lang.String):com.intellij.build.events.MessageEvent$Kind
-com.intellij.build.events.ProgressBuildEvent
-- a:getProgress():J
-- a:getTotal():J
-- a:getUnit():java.lang.String
-com.intellij.build.issue.BuildIssueProvider
-- a:getBuildIssue():com.intellij.build.issue.BuildIssue
-a:com.intellij.build.issue.ConfigurableBuildIssue
-- com.intellij.build.issue.BuildIssue
-- <init>():V
-- f:addDescription(java.lang.String):V
-- f:addQuickFix(com.intellij.build.issue.BuildIssueQuickFix):java.lang.String
-- f:addQuickFixPrompt(java.lang.String):V
-- f:getDescription():java.lang.String
-- f:getNavigatable(com.intellij.openapi.project.Project):com.intellij.pom.Navigatable
-- f:getQuickFixes():java.util.List
-- f:getTitle():java.lang.String
-- f:setNavigatable(kotlin.jvm.functions.Function1):V
-- f:setTitle(java.lang.String):V
 a:com.intellij.build.process.BuildProcessHandler
 - a:getExecutionName():java.lang.String
 f:com.intellij.codeInsight.CodeInsightBundle
@@ -910,65 +879,11 @@ c:com.intellij.codeInspection.ui.SingleIntegerFieldOptionsPanel
 - <init>(java.lang.String,com.intellij.codeInspection.InspectionProfileEntry,java.lang.String,I):V
 - s:createIntegerFieldTrackingValue(com.intellij.codeInspection.InspectionProfileEntry,java.lang.String,I):javax.swing.JFormattedTextField
 - s:setupIntegerFieldTrackingValue(javax.swing.JFormattedTextField,com.intellij.codeInspection.InspectionProfileEntry,java.lang.String):V
-c:com.intellij.execution.filters.CompositeFilter
-- <init>(com.intellij.openapi.project.Project,java.util.List):V
-- applyFilter(java.lang.String,I):com.intellij.execution.filters.Filter$Result
-- applyHeavyFilter(com.intellij.openapi.editor.Document,I,I,com.intellij.util.Consumer):V
-- getUpdateMessage():java.lang.String
-- isAnyHeavy():Z
-- isEmpty():Z
-- shouldRunHeavy():Z
-c:com.intellij.execution.filters.CompositeFilter$ApplyFilterException
-- java.lang.RuntimeException
-c:com.intellij.execution.filters.CompositeInputFilter
-- com.intellij.execution.filters.InputFilter
-- <init>(com.intellij.openapi.project.Project,java.util.Collection):V
-- applyFilter(java.lang.String,com.intellij.execution.ui.ConsoleViewContentType):java.util.List
-a:com.intellij.execution.filters.ConsoleDependentFilterProvider
-- a:getDefaultFilters(com.intellij.execution.ui.ConsoleView,com.intellij.openapi.project.Project,com.intellij.psi.search.GlobalSearchScope):com.intellij.execution.filters.Filter[]
-a:com.intellij.execution.filters.ConsoleDependentInputFilterProvider
-- a:getDefaultFilters(com.intellij.execution.ui.ConsoleView,com.intellij.openapi.project.Project,com.intellij.psi.search.GlobalSearchScope):java.util.List
-- f:getDefaultFilters(com.intellij.openapi.project.Project):com.intellij.execution.filters.InputFilter[]
-a:com.intellij.execution.filters.FileHyperlinkInfoBase
-- <init>(com.intellij.openapi.project.Project,I,I):V
-- <init>(com.intellij.openapi.project.Project,I,I,Z):V
-- b:<init>(com.intellij.openapi.project.Project,I,I,Z,I,kotlin.jvm.internal.DefaultConstructorMarker):V
-- p:calculateOffset(com.intellij.openapi.editor.Document,I,I):java.lang.Integer
-- pa:getVirtualFile():com.intellij.openapi.vfs.VirtualFile
-com.intellij.execution.filters.FilterMixin
-- a:applyHeavyFilter(com.intellij.openapi.editor.Document,I,I,com.intellij.util.Consumer):V
-- a:getUpdateMessage():java.lang.String
-- a:shouldRunHeavy():Z
-c:com.intellij.execution.filters.FilterMixin$AdditionalHighlight
-- <init>(I,I):V
-- <init>(java.util.List):V
-- getTextAttributes(com.intellij.openapi.editor.markup.TextAttributes):com.intellij.openapi.editor.markup.TextAttributes
 a:com.intellij.execution.filters.HyperlinkInfoFactory
 - <init>():V
 - a:createMultipleFilesHyperlinkInfo(java.util.List,I,com.intellij.openapi.project.Project):com.intellij.execution.filters.HyperlinkInfo
 - a:createMultipleFilesHyperlinkInfo(java.util.List,I,com.intellij.openapi.project.Project,com.intellij.execution.filters.HyperlinkInfoFactory$HyperlinkHandler):com.intellij.execution.filters.HyperlinkInfo
 - a:createMultiplePsiElementHyperlinkInfo(java.util.Collection):com.intellij.execution.filters.HyperlinkInfo
-c:com.intellij.execution.filters.LazyFileHyperlinkInfo
-- <init>(com.intellij.openapi.project.Project,java.lang.String,I,I):V
-- <init>(com.intellij.openapi.project.Project,java.lang.String,I,I,Z):V
-- b:<init>(com.intellij.openapi.project.Project,java.lang.String,I,I,Z,I,kotlin.jvm.internal.DefaultConstructorMarker):V
-- p:getVirtualFile():com.intellij.openapi.vfs.VirtualFile
-c:com.intellij.execution.filters.LineNumbersMapping$ArrayBasedMapping
-- bytecodeToSource(I):I
-- sourceToBytecode(I):I
-c:com.intellij.execution.filters.OpenFileHyperlinkInfo
-- <init>(com.intellij.openapi.project.Project,com.intellij.openapi.vfs.VirtualFile,I):V
-- <init>(com.intellij.openapi.project.Project,com.intellij.openapi.vfs.VirtualFile,I,I):V
-- <init>(com.intellij.openapi.project.Project,com.intellij.openapi.vfs.VirtualFile,I,I,Z):V
-c:com.intellij.execution.filters.RegexpFilter
-- sf:COLUMN_MACROS:java.lang.String
-- sf:FILE_PATH_MACROS:java.lang.String
-- sf:LINE_MACROS:java.lang.String
-- <init>(com.intellij.openapi.project.Project,java.lang.String):V
-- applyFilter(java.lang.String,I):com.intellij.execution.filters.Filter$Result
-- p:createOpenFileHyperlink(java.lang.String,I,I):com.intellij.execution.filters.HyperlinkInfo
-- s:getMacrosName():java.lang.String[]
-- s:validate(java.lang.String):V
 e:com.intellij.execution.services.ServiceEventListener$EventType
 - sf:GROUP_CHANGED:com.intellij.execution.services.ServiceEventListener$EventType
 - sf:RESET:com.intellij.execution.services.ServiceEventListener$EventType
@@ -1036,13 +951,6 @@ c:com.intellij.execution.services.SimpleServiceViewDescriptor
 - <init>(java.lang.String,javax.swing.Icon,java.lang.String):V
 - getId():java.lang.String
 - getPresentation():com.intellij.navigation.ItemPresentation
-c:com.intellij.execution.ui.actions.CloseAction
-- <init>(com.intellij.execution.Executor,com.intellij.execution.ui.RunContentDescriptor,com.intellij.openapi.project.Project):V
-- getActionUpdateThread():com.intellij.openapi.actionSystem.ActionUpdateThread
-- getContentDescriptor():com.intellij.execution.ui.RunContentDescriptor
-- getExecutor():com.intellij.execution.Executor
-- perform():V
-- update(com.intellij.openapi.actionSystem.AnActionEvent):V
 c:com.intellij.execution.util.EnvironmentVariable
 - IS_PREDEFINED:Z
 - NAME:java.lang.String
@@ -1288,11 +1196,28 @@ f:com.intellij.ide.actions.searcheverywhere.SearchEverywhereCommandInfo
 - getDefinition():java.lang.String
 com.intellij.ide.actions.searcheverywhere.SearchEverywhereExtendedInfoProvider
 - createExtendedInfo():com.intellij.ide.actions.searcheverywhere.ExtendedInfo
+c:com.intellij.ide.actions.searcheverywhere.SearchEverywhereFoundElementInfo
+- sf:COMPARATOR:java.util.Comparator
+- f:contributor:com.intellij.ide.actions.searcheverywhere.SearchEverywhereContributor
+- f:element:java.lang.Object
+- f:priority:I
+- <init>(java.lang.Object,I,com.intellij.ide.actions.searcheverywhere.SearchEverywhereContributor):V
+- getDescription():java.lang.String
+- getPriority():I
 com.intellij.ide.actions.searcheverywhere.SearchEverywhereToggleAction
 - a:canToggleEverywhere():Z
 - a:isEverywhere():Z
 - a:setEverywhere(Z):V
 - setScopeIsDefaultAndAutoSet(Z):V
+com.intellij.ide.actions.searcheverywhere.SearchListener
+- s:combine(java.util.Collection):com.intellij.ide.actions.searcheverywhere.SearchListener
+- s:combine(com.intellij.ide.actions.searcheverywhere.SearchListener[]):com.intellij.ide.actions.searcheverywhere.SearchListener
+- a:contributorFinished(com.intellij.ide.actions.searcheverywhere.SearchEverywhereContributor,Z):V
+- a:contributorWaits(com.intellij.ide.actions.searcheverywhere.SearchEverywhereContributor):V
+- a:elementsAdded(java.util.List):V
+- a:elementsRemoved(java.util.List):V
+- a:searchFinished(java.util.Map):V
+- a:searchStarted(java.lang.String,java.util.Collection):V
 com.intellij.ide.actions.searcheverywhere.remote.RemoteSearchEverywhereConverter
 - a:convertToItem(com.intellij.ide.actions.searcheverywhere.remote.RemoteSearchEverywherePresentation):java.lang.Object
 - a:convertToPresentation(java.lang.Object):com.intellij.ide.actions.searcheverywhere.remote.RemoteSearchEverywherePresentation
@@ -1510,6 +1435,10 @@ c:com.intellij.ide.util.projectWizard.EmptyModuleBuilder
 - getPresentableName():java.lang.String
 - isOpenProjectSettingsAfter():Z
 - isTemplateBased():Z
+c:com.intellij.ide.util.scopeChooser.ScopeDescriptor
+- getColor():java.awt.Color
+- getIcon():javax.swing.Icon
+- scopeEquals(com.intellij.psi.search.SearchScope):Z
 f:com.intellij.lang.CodeInsightActions
 - sf:DELEGATE_METHODS:com.intellij.lang.LanguageExtension
 - sf:GOTO_SUPER:com.intellij.lang.LanguageExtension
@@ -3455,7 +3384,6 @@ f:com.intellij.psi.search.GlobalSearchScopes
 - s:directoriesScope(com.intellij.openapi.project.Project,Z,com.intellij.openapi.vfs.VirtualFile[]):com.intellij.psi.search.GlobalSearchScope
 - s:directoryScope(com.intellij.openapi.project.Project,com.intellij.openapi.vfs.VirtualFile,Z):com.intellij.psi.search.GlobalSearchScope
 - s:directoryScope(com.intellij.psi.PsiDirectory,Z):com.intellij.psi.search.GlobalSearchScope
-- s:executionScope(com.intellij.openapi.project.Project,com.intellij.execution.configurations.RunProfile):com.intellij.psi.search.GlobalSearchScope
 - s:filterScope(com.intellij.openapi.project.Project,com.intellij.psi.search.scope.packageSet.NamedScope):com.intellij.psi.search.GlobalSearchScope
 a:com.intellij.psi.stubs.NamedStubBase
 - p:<init>(com.intellij.psi.stubs.StubElement,com.intellij.psi.stubs.IStubElementType,com.intellij.util.io.StringRef):V
@@ -3854,37 +3782,6 @@ a:com.intellij.semantic.SemService
 - a:getSemElements(com.intellij.semantic.SemKey,com.intellij.psi.PsiElement):java.util.List
 - a:getSemElementsNoCache(com.intellij.semantic.SemKey,com.intellij.psi.PsiElement):java.util.List
 - s:getSemService(com.intellij.openapi.project.Project):com.intellij.semantic.SemService
-c:com.intellij.task.ProjectTaskContext
-- <init>(java.lang.Object,com.intellij.execution.configurations.RunConfiguration):V
-- <init>(java.lang.Object,com.intellij.execution.configurations.RunConfiguration,Z):V
-- <init>(Z):V
-Fa:com.intellij.task.ProjectTaskManager
-- sf:EMPTY_TASKS_ARRAY:com.intellij.task.ProjectTask[]
-- <init>(com.intellij.openapi.project.Project):V
-- a:createAllModulesBuildTask(Z,com.intellij.openapi.project.Project):com.intellij.task.ProjectTask
-- a:createBuildTask(Z,com.intellij.openapi.roots.ProjectModelBuildableElement[]):com.intellij.task.ProjectTask
-- createModulesBuildTask(com.intellij.openapi.module.Module,Z,Z,Z):com.intellij.task.ProjectTask
-- createModulesBuildTask(com.intellij.openapi.module.Module[],Z,Z,Z):com.intellij.task.ProjectTask
-- a:createModulesBuildTask(com.intellij.openapi.module.Module[],Z,Z,Z,Z):com.intellij.task.ProjectTask
-- a:rebuild(com.intellij.openapi.roots.ProjectModelBuildableElement[]):org.jetbrains.concurrency.Promise
-- a:run(com.intellij.task.ProjectTaskContext,com.intellij.task.ProjectTask):org.jetbrains.concurrency.Promise
-c:com.intellij.task.ProjectTaskResult
-- <init>(Z,I,I):V
-- <init>(Z,I,I,java.util.Map):V
-- anyMatch(java.util.function.BiPredicate):Z
-- getAffectedModules(java.util.function.Predicate):java.util.List
-- getBuildableElements(java.lang.Class,java.util.function.Predicate):java.util.List
-- getTasks(java.util.function.BiPredicate):java.util.List
-- getTasksState():java.util.Map
-- getWarnings():I
-- isAborted():Z
-a:com.intellij.task.ProjectTaskRunner
-- sf:EP_NAME:com.intellij.openapi.extensions.ExtensionPointName
-- canRun(com.intellij.openapi.project.Project,com.intellij.task.ProjectTask):Z
-- canRun(com.intellij.openapi.project.Project,com.intellij.task.ProjectTask,com.intellij.task.ProjectTaskContext):Z
-- canRun(com.intellij.task.ProjectTask):Z
-- createExecutionEnvironment(com.intellij.openapi.project.Project,com.intellij.task.ExecuteRunConfigurationTask,com.intellij.execution.Executor):com.intellij.execution.runners.ExecutionEnvironment
-- run(com.intellij.openapi.project.Project,com.intellij.task.ProjectTaskContext,com.intellij.task.ProjectTask[]):org.jetbrains.concurrency.Promise
 a:com.intellij.ui.FileColorManager
 - <init>():V
 - a:addScopeColor(java.lang.String,java.lang.String,Z):V

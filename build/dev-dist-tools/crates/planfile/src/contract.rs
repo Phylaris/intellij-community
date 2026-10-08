@@ -1,22 +1,17 @@
 //! The contract of one plugin remainder: the recipe that the packer executes, the asset rows, and the input catalogue.
 //!
 //! The recipe stays in the process, so it has no JSON form. The asset rows go to `assets.json`, and Starlark writes the
-//! catalogue. The asset rows keep the field order and the omitted defaults of the Go `json` tags, so
-//! `serde_json::to_vec` writes the bytes of Go `json.Marshal`. Go also escapes `<`, `>`, `&`, U+2028 and U+2029, and no
-//! plan file holds one of them.
+//! catalogue. An asset row writes its fields in declaration order. It omits an empty `artifact`, the kind `file` and an
+//! absent `class_path`, and it writes `destination` and `producer` always. So `serde_json::to_vec` writes the bytes
+//! that the former writer wrote. The former writer also escaped `<`, `>`, `&`, U+2028 and U+2029, and no plan file
+//! holds one of them.
 
 use serde::{Deserialize, Serialize};
 
 /// The execution version of a plan with files only.
 pub const VERSION: u32 = 1;
-/// The execution version of a plan with a tree.
+/// The execution version of a plan with a tree. The native tree of a reused natives jar is such a tree.
 pub const TREE_VERSION: u32 = 2;
-/// The execution version of a plan with a distribution-scope asset. Only a reused native tree has that scope, so the
-/// remainder writes only plugin files in every version.
-pub const SCOPED_VERSION: u32 = 3;
-
-pub const PLUGIN_SCOPE: &str = "plugin";
-pub const DISTRIBUTION_SCOPE: &str = "distribution";
 
 /// The remainder recipe of one plugin. It keeps the complete asset order and the producer of each asset. It holds the
 /// operations of the remainder assets in plan order.
@@ -24,26 +19,76 @@ pub const DISTRIBUTION_SCOPE: &str = "distribution";
 pub struct Recipe {
     pub version: u32,
     pub plugin: String,
-    pub layout_signature: String,
     pub assets: Vec<Asset>,
     pub operations: Vec<Operation>,
 }
 
-/// One row of `assets.json`. The producer is `remainder` or `independent`. An independent asset names the module of
-/// its reused jar as the artifact. An empty kind is `file`, and an empty scope is `plugin`.
+/// One row of `assets.json`. An independent asset names the module of its reused jar as the artifact. Every asset is
+/// below the plugin directory. The reader requires the producer, which the writer always writes.
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
-#[serde(default, deny_unknown_fields, rename_all = "camelCase")]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct Asset {
+    #[serde(default)]
     pub destination: String,
-    pub producer: String,
-    #[serde(skip_serializing_if = "String::is_empty")]
+    pub producer: Producer,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub artifact: String,
-    #[serde(skip_serializing_if = "String::is_empty")]
-    pub kind: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// The row omits the kind `file`, as the former writer did.
+    #[serde(default, skip_serializing_if = "AssetKind::is_file")]
+    pub kind: AssetKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub class_path: Option<bool>,
-    #[serde(skip_serializing_if = "String::is_empty")]
-    pub scope: String,
+}
+
+/// The producer of an asset. The reader refuses every other text by name.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[serde(rename_all = "kebab-case", try_from = "String")]
+pub enum Producer {
+    /// The remainder packer writes the asset. It is the default of a test fixture.
+    #[default]
+    Remainder,
+    /// Another action writes the asset: a reused module jar or its native tree.
+    Independent,
+}
+
+impl TryFrom<String> for Producer {
+    type Error = String;
+
+    fn try_from(producer: String) -> Result<Self, String> {
+        match producer.as_str() {
+            "remainder" => Ok(Self::Remainder),
+            "independent" => Ok(Self::Independent),
+            _ => Err(format!("unknown asset producer {producer:?}")),
+        }
+    }
+}
+
+/// The kind of an asset. The reader takes an empty kind as `file`, and it refuses every other text by name.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[serde(rename_all = "kebab-case", try_from = "String")]
+pub enum AssetKind {
+    #[default]
+    File,
+    Tree,
+}
+
+impl AssetKind {
+    /// Reports whether the kind is `file`, the kind that the asset row omits.
+    pub fn is_file(&self) -> bool {
+        *self == Self::File
+    }
+}
+
+impl TryFrom<String> for AssetKind {
+    type Error = String;
+
+    fn try_from(kind: String) -> Result<Self, String> {
+        match kind.as_str() {
+            "" | "file" => Ok(Self::File),
+            "tree" => Ok(Self::Tree),
+            _ => Err(format!("unknown asset kind {kind:?}; the packer writes only file and tree assets")),
+        }
+    }
 }
 
 /// The input catalogue that the Starlark rule writes. Only this document holds file system roots. Its artifacts are the
@@ -57,13 +102,35 @@ pub struct Catalogue {
     pub libraries: Vec<Library>,
 }
 
-/// One declared input. The kind is `file` or `directory`.
-#[derive(Deserialize, Clone, Debug, Default, PartialEq, Eq)]
-#[serde(default, deny_unknown_fields)]
+/// One declared input. The reader requires the kind, which Starlark always writes.
+#[derive(Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct Artifact {
+    #[serde(default)]
     pub id: String,
-    pub kind: String,
+    pub kind: ArtifactKind,
+    #[serde(default)]
     pub root: String,
+}
+
+/// The kind of a declared input. The reader refuses every other text by name.
+#[derive(Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[serde(try_from = "String")]
+pub enum ArtifactKind {
+    File,
+    Directory,
+}
+
+impl TryFrom<String> for ArtifactKind {
+    type Error = String;
+
+    fn try_from(kind: String) -> Result<Self, String> {
+        match kind.as_str() {
+            "file" => Ok(Self::File),
+            "directory" => Ok(Self::Directory),
+            _ => Err(format!("unknown artifact root kind {kind:?}")),
+        }
+    }
 }
 
 /// One library and its member files in their expansion order.
@@ -101,7 +168,6 @@ pub enum Operation {
         mode: u32,
         sources: Vec<Source>,
         merge_entities: bool,
-        directory_entries: bool,
     },
     /// Copies one declared file.
     Copy { destination: String, mode: u32, input: Reference },
@@ -125,12 +191,10 @@ impl Operation {
 /// One jar source.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Source {
-    /// The entries of one archive through the filter. Only the output of a module-filter operation has excludes, which
-    /// are java.nio globs.
+    /// The entries of one archive through the filter.
     Archive {
         input: Reference,
         filter: Filter,
-        excludes: Vec<String>,
         manifest: Manifest,
     },
     /// One file at the entry name. The jar writer patches it.
@@ -177,7 +241,8 @@ pub struct LayoutAsset {
     pub mode: u32,
 }
 
-/// One layout transform. The Go `LayoutTransform` states the rules of each field, and the executor applies them.
+/// One layout transform. The Kotlin `DevPluginLayoutAssetTransform` states the rules of each field, and the executor
+/// applies them. A tree needs no transform, because a plain copy places it.
 #[derive(Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct LayoutTransform {
@@ -186,10 +251,6 @@ pub struct LayoutTransform {
     pub strip_components: u32,
     #[serde(default)]
     pub mappings: Vec<LayoutMapping>,
-    #[serde(default)]
-    pub excludes: Vec<String>,
-    #[serde(default)]
-    pub directory_excludes: Vec<String>,
     #[serde(default)]
     pub includes: Vec<String>,
     #[serde(default)]
@@ -200,8 +261,6 @@ pub struct LayoutTransform {
 #[serde(rename_all = "kebab-case")]
 pub enum LayoutTransformKind {
     ArchiveTree,
-    GzipXmlArchive,
-    TreeMap,
 }
 
 /// Selects entries by a java.nio glob over the whole relative path. An empty pattern is `**`.

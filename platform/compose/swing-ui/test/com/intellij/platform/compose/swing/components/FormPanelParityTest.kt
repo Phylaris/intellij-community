@@ -21,7 +21,6 @@ import org.jetbrains.compose.swing.test.screenshot.assertImagesPixelPerfect
 import org.jetbrains.compose.swing.test.screenshot.captureToImage
 import org.junit.jupiter.api.Test
 import java.awt.Component
-import java.awt.Container
 import java.awt.Dimension
 import java.awt.image.BufferedImage
 import javax.swing.JCheckBox
@@ -400,7 +399,9 @@ class FormPanelParityTest {
     }
 
     val formPanel = onNodeWithTag(FORM_TAG).fetch<JComponent>()
-    val dslPanel = panel(dsl)
+    // The stand-in peer a lightweight component gets, as the harness gives its own root one, so the reference
+    // is validated the way the form is.
+    val dslPanel = panel(dsl).apply { addNotify() }
 
     formPanel.border = margins
     dslPanel.border = margins
@@ -415,6 +416,8 @@ class FormPanelParityTest {
     val reference = dslPanel.captureToImage()
     assertWasDrawn(reference)
     assertImagesPixelPerfect(reference, formPanel.captureToImage())
+    dslPanel.removeNotify()
+    assertAccessibilityMatches(dslPanel, formPanel)
   }
 
   /**
@@ -429,18 +432,11 @@ class FormPanelParityTest {
 
   /**
    * Gives [panel] the width a settings page would give it and more height than it asks for, so a resizable
-   * row has space to take, then lays out the whole tree under it: a panel that was never realized in a
-   * window is laid out only when asked, and only one level at a time.
+   * row has space to take, then validates it as Swing validates a page.
    */
   private fun layOut(panel: JComponent) {
     panel.size = Dimension(WIDTH, panel.preferredSize.height + SPARE_HEIGHT)
-    layOutTree(panel)
-  }
-
-  private fun layOutTree(component: Component) {
-    if (component !is Container) return
-    component.doLayout()
-    component.components.forEach(::layOutTree)
+    panel.validate()
   }
 
   /**
@@ -448,23 +444,37 @@ class FormPanelParityTest {
    * were declared in.
    */
   private fun assertBoundsMatch(dslPanel: JComponent, formPanel: JComponent) {
+    forEachPair(dslPanel, formPanel) { expected, actual, name ->
+      assertEquals(expected.bounds, actual.bounds, "bounds of $name")
+    }
+  }
+
+  /**
+   * Compares what every component of the two panels answers assistive technology with: a labeled control is
+   * named by its label, and a commented one is described by its comment.
+   */
+  private fun assertAccessibilityMatches(dslPanel: JComponent, formPanel: JComponent) {
+    forEachPair(dslPanel, formPanel) { expected, actual, name ->
+      assertEquals(expected.accessibleContext?.accessibleName, actual.accessibleContext?.accessibleName, "accessible name of $name")
+      assertEquals(
+        expected.accessibleContext?.accessibleDescription,
+        actual.accessibleContext?.accessibleDescription,
+        "accessible description of $name",
+      )
+    }
+  }
+
+  /** Pairs the components of the two panels by kind and by the order they were declared in. */
+  private fun forEachPair(dslPanel: JComponent, formPanel: JComponent, check: (Component, Component, String) -> Unit) {
     val expected = dslPanel.components.groupBy(::kindOf)
-    // A row boundary is bookkeeping rather than a component of the form: it is given no cell, so it has no
-    // bounds to compare and the screenshot the two sides are also held to is what says it draws nothing.
-    val actual = formPanel.components
-      .filterNot { it is FormRowBoundaryComponent }
-      .groupBy(::kindOf)
+    val actual = formPanel.components.groupBy(::kindOf)
 
     assertEquals(expected.keys, actual.keys, "the two forms hold different kinds of component")
     for ((kind, expectedOfKind) in expected) {
       val actualOfKind = actual.getValue(kind)
       assertEquals(expectedOfKind.size, actualOfKind.size, "number of ${kind.simpleName}s")
       for ((index, component) in expectedOfKind.withIndex()) {
-        assertEquals(
-          component.bounds,
-          actualOfKind[index].bounds,
-          "bounds of ${kind.simpleName} #$index (${describe(component)})",
-        )
+        check(component, actualOfKind[index], "${kind.simpleName} #$index (${describe(component)})")
       }
     }
   }

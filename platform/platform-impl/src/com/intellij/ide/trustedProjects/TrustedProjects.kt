@@ -9,6 +9,7 @@ import com.intellij.ide.lightEdit.LightEditUtil
 import com.intellij.ide.trustedProjects.TrustedProjectsLocator.LocatedProject
 import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.wm.ex.WelcomeScreenProjectProvider
 import com.intellij.util.ThreeState
 import com.intellij.util.application
@@ -57,7 +58,7 @@ object TrustedProjects {
 
   @ApiStatus.Internal
   fun getProjectTrustedState(locatedProject: LocatedProject): ThreeState {
-    val explicitTrustedState = TrustedPaths.getInstance().getProjectTrustedState(locatedProject)
+    val explicitTrustedState = getStateProvider(locatedProject).getProjectTrustedState(locatedProject)
     return when {
       isTrustedCheckDisabledForProduct() -> ThreeState.YES
       // before the explicit state: a recorded answer for a system path is stale and must not win
@@ -79,10 +80,10 @@ object TrustedProjects {
     if (isSystemTrusted(locatedProject)) {
       return
     }
-    val trustedPaths = TrustedPaths.getInstance()
-    val oldState = trustedPaths.getProjectTrustedState(locatedProject)
-    trustedPaths.setProjectTrustedState(locatedProject, isTrusted)
-    val newState = trustedPaths.getProjectTrustedState(locatedProject)
+    val stateProvider = getStateProvider(locatedProject)
+    val oldState = stateProvider.getProjectTrustedState(locatedProject)
+    stateProvider.setProjectTrusted(locatedProject, isTrusted)
+    val newState = stateProvider.getProjectTrustedState(locatedProject)
     if (oldState != newState) {
       val syncPublisher = application.messageBus.syncPublisher(TrustedProjectsListener.TOPIC)
       when (isTrusted) {
@@ -90,6 +91,23 @@ object TrustedProjects {
         else -> syncPublisher.onProjectUntrusted(locatedProject)
       }
     }
+  }
+
+  /** Removes saved trust decisions and trusted locations, then publishes changes to the effective trust state. */
+  @ApiStatus.Internal
+  fun clearSavedTrust() {
+    val paths = TrustedPaths.getInstance()
+    val locations = TrustedPathsSettings.getInstance()
+    val recordedPaths = paths.state.trustedPaths.keys + locations.getTrustedPaths()
+    val projects = ProjectManager.getInstance().openProjects.map { TrustedProjectsLocator.locateProject(it) }
+    val affected = projects + recordedPaths.map { TrustedProjectsLocator.locateProject(Path.of(it), null) }
+    val trustedBefore = affected.filter { isProjectTrusted(it) }
+
+    paths.clearTrustedPaths()
+    locations.setTrustedPaths(emptyList())
+
+    val publisher = application.messageBus.syncPublisher(TrustedProjectsListener.TOPIC)
+    trustedBefore.filterNot { isProjectTrusted(it) }.forEach { publisher.onProjectUntrusted(it) }
   }
 
   /**
@@ -118,6 +136,12 @@ object TrustedProjects {
   fun isSystemTrustedPath(path: Path): Boolean {
     val welcomeScreenProjectPath = WelcomeScreenProjectProvider.getWelcomeScreenProjectPath() ?: return false
     return path.startsWith(welcomeScreenProjectPath)
+  }
+
+  private fun getStateProvider(locatedProject: LocatedProject): TrustedProjectsStateProvider {
+    // the default provider is registered with order="last" and is applicable to every project
+    return TrustedProjectsStateProvider.EP_NAME.findFirstSafe { it.isApplicable(locatedProject) }
+           ?: error("No TrustedProjectsStateProvider is applicable to ${locatedProject.projectRoots}")
   }
 
   /** Whether every root of [locatedProject] is a [system path][isSystemTrustedPath]. */

@@ -22,11 +22,11 @@ import com.intellij.platform.testFramework.plugins.installAt
 import com.intellij.platform.testFramework.plugins.module
 import com.intellij.platform.testFramework.plugins.plugin
 import com.intellij.testFramework.TestLoggerFactory
-import com.intellij.testFramework.rules.InMemoryFsRule
+import com.intellij.testFramework.rules.InMemoryFsExtension
 import javax.swing.tree.DefaultMutableTreeNode
 import org.assertj.core.api.Assertions.assertThat
-import org.junit.Rule
-import org.junit.Test
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.extension.RegisterExtension
 
 internal class PluginLoadingStateModelTest {
   init {
@@ -35,9 +35,9 @@ internal class PluginLoadingStateModelTest {
     PluginManagerCore.isUnitTestMode = true
   }
 
-  @Rule
+  @RegisterExtension
   @JvmField
-  val inMemoryFs = InMemoryFsRule()
+  val inMemoryFs = InMemoryFsExtension()
 
   private val pluginsDirPath get() = inMemoryFs.fs.getPath("/").resolve("wd/plugins")
 
@@ -158,6 +158,41 @@ internal class PluginLoadingStateModelTest {
     assertThat(dependency.id).isEqualTo("absent")
     assertThat(dependency.target).isNull()
     assertThat(dependency.targetState).isNull()
+  }
+
+  /** The copy action of the tree and the report print each node with `toString`. */
+  @Test
+  fun `a node prints one readable line`() {
+    plugin("dep") {}.installAt(pluginsDirPath)
+    plugin("main") {
+      dependencies { plugin("dep") }
+    }.installAt(pluginsDirPath)
+
+    val tree = buildTree(withDisabledPlugins = arrayOf("dep"))
+
+    val main = tree.pluginNode("main")
+    assertThat(main.toString())
+      .startsWith("[EXCLUDED] plugin 'main' (main, ")
+      .contains(" -- plugin 'main' (main, ")
+      .endsWith(" exclusion")
+      .doesNotContain("\n")
+
+    val dependency = tree.dependencyNodes(main).single()
+    assertThat(dependency.toString())
+      .startsWith("plugin dep -> plugin 'dep' (dep, ")
+      .contains(") [EXCLUDED] -- plugin 'dep' (dep, ")
+      .endsWith(" is marked disabled")
+
+    val chain = tree.chainNodes(main)
+    assertThat(chain.first().toString()).endsWith(" exclusion")
+    assertThat(chain.last().toString()).endsWith(" is marked disabled   <-- root cause")
+
+    val groups = tree.nodeByDescriptor.getValue(main.descriptor).children().asSequence()
+      .filterIsInstance<DefaultMutableTreeNode>()
+      .mapNotNull { it.userObject as? GroupNode }
+      .map { it.toString() }
+      .toList()
+    assertThat(groups).containsExactly("Dependencies (1)", "Not loaded because (2)")
   }
 
   @Test

@@ -3,39 +3,41 @@
 //! The `--embedded-product` mode: the executor of `dev_dist_embedded_product_descriptor`.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::PathBuf;
 
-use anyhow::{Result, bail};
+use anyhow::{Result, anyhow};
 
-use crate::descriptorxml;
+use crate::compose::{self, Composition};
+use crate::descriptorxml::{self, Element};
 use crate::structural::{self, Cache, ContentRequest};
-use crate::{
-    Mode, OptionLine, append_descriptor_jar, assign, is_mode_line, put_descriptor, read_text, refuse_repeated_options, report,
-    require_mode, require_options, seed_cache, write_output,
-};
+use crate::{Jars, append_descriptor_jar, put_descriptor, report, seed_cache, write_output};
 
 /// The declared inputs of `dev_dist_embedded_product_descriptor`.
 ///
-/// The rule also states `--module`, the descriptor search scope of the platform. It decides nothing here, because
-/// every lookup reads the one cache that the declared files seed. So this mode accepts the option and reads nothing
-/// from it.
-#[derive(Debug, Default, PartialEq, Eq)]
+/// The rule states no descriptor search scope. Every lookup reads the one cache that the declared files seed, so this
+/// mode refuses `--module` as an unknown option.
+#[derive(Debug, PartialEq, Eq)]
 pub(crate) struct EmbeddedProductRequest {
-    pub output: String,
-    pub source: String,
-    pub descriptors: BTreeMap<String, String>,
-    pub descriptors_in_jar: BTreeMap<String, Vec<String>>,
+    pub output: PathBuf,
+    /// The root element of the product descriptor, as the flags of [`compose`] state it.
+    pub composition: Composition,
+    pub descriptors: BTreeMap<String, PathBuf>,
+    pub descriptors_in_jar: BTreeMap<String, Vec<PathBuf>>,
     pub separate_jar: BTreeSet<String>,
 }
 
-pub(crate) fn run(lines: &[OptionLine]) -> i32 {
-    let parsed = match parse_embedded_product_request(lines) {
+pub(crate) fn run(options: cli::Options) -> i32 {
+    let parsed = match parse_embedded_product_request(options) {
         Ok(parsed) => parsed,
         Err(error) => return report(2, &error),
     };
     let content = match resolve_embedded_product(&parsed) {
         Ok(content) => content,
         Err(error) => {
-            let error = error.context(format!("could not resolve the embedded product descriptor ({})", parsed.source));
+            let error = error.context(format!(
+                "could not resolve the embedded product descriptor {}",
+                parsed.output.display()
+            ));
             return report(1, &error);
         }
     };
@@ -46,13 +48,18 @@ pub(crate) fn run(lines: &[OptionLine]) -> i32 {
 }
 
 pub(crate) fn resolve_embedded_product(parsed: &EmbeddedProductRequest) -> Result<String> {
-    let request = ContentRequest {
-        main_module: parsed.source.clone(),
+    Ok(resolve_product_content(parsed, &embedded_content_request(parsed))?.text)
+}
+
+/// The content request of the embedded product descriptor. The output names the descriptor in a failure, because the
+/// rule states no module.
+pub(crate) fn embedded_content_request(parsed: &EmbeddedProductRequest) -> ContentRequest {
+    ContentRequest {
+        main_module: parsed.output.display().to_string(),
         separate_jar: parsed.separate_jar.clone(),
         embeds: true,
         ..ContentRequest::default()
-    };
-    Ok(resolve_product_content(parsed, &request)?.text)
+    }
 }
 
 /// A resolved product descriptor, and the descriptor cache that resolved it.
@@ -61,13 +68,18 @@ pub(crate) struct ProductContent {
     pub cache: Cache,
 }
 
-/// Resolves the includes of a product descriptor and embeds its content modules.
+/// Composes the root element of a product descriptor, resolves its includes and embeds its content modules.
 ///
 /// The embedded product descriptor and the product descriptor share this body. Only the content request differs.
 pub(crate) fn resolve_product_content(parsed: &EmbeddedProductRequest, request: &ContentRequest) -> Result<ProductContent> {
-    let cache = seed_cache(&parsed.descriptors, &parsed.descriptors_in_jar)?;
-    let source = read_text(&parsed.source)?;
-    let mut element = descriptorxml::read(&source)?;
+    resolve_root(parsed.composition.element(), parsed, request)
+}
+
+/// Resolves the includes of `element` and embeds its content modules from the declared descriptors of `parsed`.
+///
+/// The Kotlin fixtures of the stages state roots that no composition states, so their tests call this directly.
+pub(crate) fn resolve_root(mut element: Element, parsed: &EmbeddedProductRequest, request: &ContentRequest) -> Result<ProductContent> {
+    let cache = seed_cache(&parsed.descriptors, &parsed.descriptors_in_jar, &mut Jars::default())?;
     structural::resolve_includes(&mut element, &cache)?;
     structural::embed_content_modules(&mut element, request, &cache)?;
     Ok(ProductContent {
@@ -76,40 +88,36 @@ pub(crate) fn resolve_product_content(parsed: &EmbeddedProductRequest, request: 
     })
 }
 
-pub(crate) fn parse_embedded_product_request(lines: &[OptionLine]) -> Result<EmbeddedProductRequest> {
-    require_mode(lines, Mode::EmbeddedProduct)?;
-    refuse_repeated_options(lines, &["--descriptor", "--descriptor-in-jar", "--module", "--separate-jar"])?;
-    let mut parsed = EmbeddedProductRequest::default();
-    for line in lines {
-        if is_mode_line(line, Mode::EmbeddedProduct) || parse_product_content_option(&mut parsed, line)? {
-            continue;
-        }
-        match line.name.as_str() {
-            "--module" => {
-                line.value()?;
-            }
-            "--separate-jar" => {
-                parsed.separate_jar.insert(line.value()?.to_owned());
-            }
-            option => bail!("unknown embedded product descriptor option '{option}'"),
-        }
-    }
-    check_product_content_request(&parsed)?;
+pub(crate) fn parse_embedded_product_request(mut options: cli::Options) -> Result<EmbeddedProductRequest> {
+    let mut parsed = parse_product_content(&mut options)?;
+    parsed.separate_jar = options.take_all("--separate-jar")?.into_iter().collect();
+    options.finish()?;
     Ok(parsed)
 }
 
-/// Reads an option that both product descriptor modes accept. It returns false for another option.
-pub(crate) fn parse_product_content_option(parsed: &mut EmbeddedProductRequest, line: &OptionLine) -> Result<bool> {
-    match line.name.as_str() {
-        "--out" => assign(&mut parsed.output, line)?,
-        "--source" => assign(&mut parsed.source, line)?,
-        "--descriptor" => put_descriptor(&mut parsed.descriptors, line.value()?)?,
-        "--descriptor-in-jar" => append_descriptor_jar(&mut parsed.descriptors_in_jar, line.value()?)?,
-        _ => return Ok(false),
+/// Takes the options that both product descriptor modes accept.
+///
+/// The request states at least one of the composition flags of [`compose`].
+pub(crate) fn parse_product_content(options: &mut cli::Options) -> Result<EmbeddedProductRequest> {
+    let mut descriptors = BTreeMap::new();
+    for value in options.take_all("--descriptor")? {
+        put_descriptor(&mut descriptors, &value)?;
     }
-    Ok(true)
+    let mut descriptors_in_jar = BTreeMap::new();
+    for value in options.take_all("--descriptor-in-jar")? {
+        append_descriptor_jar(&mut descriptors_in_jar, &value)?;
+    }
+    let output = options.require("--out")?.into();
+    let composition = Composition::take(options)?
+        .ok_or_else(|| anyhow!("at least one of the composition flags {} is required", compose::FLAGS.join(", ")))?;
+    Ok(EmbeddedProductRequest {
+        output,
+        composition,
+        descriptors,
+        descriptors_in_jar,
+        separate_jar: BTreeSet::new(),
+    })
 }
 
-pub(crate) fn check_product_content_request(parsed: &EmbeddedProductRequest) -> Result<()> {
-    require_options(&[("--out", &parsed.output), ("--source", &parsed.source)])
-}
+#[cfg(test)]
+mod tests;

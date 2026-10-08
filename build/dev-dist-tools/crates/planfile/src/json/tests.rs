@@ -1,11 +1,11 @@
-//! The reader part of `pluginpack/contract_test.go`: `serde_json` refuses what Go `ReadJSON` refuses.
+//! The reader part of `pluginpack/contract_test.go`: `serde_json` refuses what the former reader refused.
 
 use serde::Deserialize;
 
 use super::{from_slice, read};
 use crate::contract::{Asset, Catalogue};
 
-/// The shape of the Go test document: a recipe with a version, a plugin and operations.
+/// The shape of the test document: a recipe with a version, a plugin and operations.
 #[derive(Deserialize, Debug, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 struct Document {
@@ -47,13 +47,13 @@ fn read_json_rejects_ambiguous_documents() {
         std::fs::write(&file, content).unwrap();
         let error = read::<Document>(&file).expect_err(&format!("accepted an ambiguous document: {}", String::from_utf8_lossy(content)));
         assert!(
-            error.message().starts_with(&file.display().to_string()),
+            format!("{error:#}").starts_with(&file.display().to_string()),
             "the error names the file: {error}"
         );
     }
     let directory = tempfile::tempdir().unwrap();
     let error = read::<Document>(&directory.path().join("absent.json")).unwrap_err();
-    assert!(error.message().contains("absent.json: "), "{error}");
+    assert!(format!("{error:#}").contains("absent.json: "), "{error}");
 }
 
 #[test]
@@ -78,7 +78,7 @@ fn from_slice_names_the_refusal() {
         (br#"{"plugin":"p"}"#, "missing field `version`"),
     ] {
         let error = from_slice::<Document>(content).expect_err(&String::from_utf8_lossy(content));
-        assert!(error.message().contains(message), "expected {message:?}, got {error}");
+        assert!(format!("{error:#}").contains(message), "expected {message:?}, got {error}");
     }
 }
 

@@ -26,8 +26,8 @@
     <module name="intellij.platform.backend.observation"/>
     <module name="intellij.platform.builtInServer"/>
     <module name="intellij.platform.codeStyle"/>
-    <module name="intellij.platform.collaborationTools"/>
     <module name="intellij.platform.concurrency"/>
+    <module name="intellij.platform.consoleView"/>
     <module name="intellij.platform.core"/>
     <module name="intellij.platform.core.impl"/>
     <module name="intellij.platform.core.ui"/>
@@ -45,7 +45,6 @@
     <module name="intellij.platform.ide.core"/>
     <module name="intellij.platform.ide.core.impl"/>
     <module name="intellij.platform.ide.impl"/>
-    <module name="intellij.platform.ide.impl.wsl"/>
     <module name="intellij.platform.ide.observable"/>
     <module name="intellij.platform.ide.progress"/>
     <module name="intellij.platform.ide.recentProjects"/>
@@ -64,6 +63,7 @@
     <module name="intellij.platform.scopes"/>
     <module name="intellij.platform.searchEverywhere"/>
     <module name="intellij.platform.statistics"/>
+    <module name="intellij.platform.util.annotations"/>
     <module name="intellij.platform.util.coroutines"/>
     <module name="intellij.platform.util.diff"/>
     <module name="intellij.platform.util.ex"/>
@@ -113,7 +113,8 @@
     <action id="Git.Reword.Commit" class="git4idea.rebase.GitRewordAction"/>
     <action id="Git.Squash.Commits" class="git4idea.rebase.log.squash.GitSquashLogAction"/>
     <action id="Git.Drop.Commits" class="git4idea.rebase.log.drop.GitDropLogAction"/>
-    <action id="Git.Show.WorkingTrees" class="git4idea.workingTrees.actions.ShowWorkingTreesAction">
+    <action id="Git.Show.WorkingTrees" class="git4idea.workingTrees.actions.ShowWorkingTreesAction"
+            icon="com.intellij.vcs.git.icons.GitIcons.Worktree">
       <add-to-group group-id="Vcs.Log.ToolWindow.TabActions.DropDown" relative-to-action="Vcs.ShowConsoleTab" anchor="after"/>
     </action>
     <action id="Git.CreateNewWorkingTree" class="git4idea.workingTrees.actions.GitCreateWorkingTreeAction"/>
@@ -639,7 +640,7 @@
             icon="AllIcons.Actions.ClearCash"/>
     <action id="Git.WorkingTrees.ToggleLock" class="git4idea.workingTrees.ui.actions.GitToggleLockWorkingTreeAction"/>
     <action id="Git.WorkingTrees.OpenReview" class="git4idea.workingTrees.ui.actions.OpenReviewForWorkingTreeAction"
-            icon="icons.CollaborationToolsIcons.PullRequestOpen"/>
+            icon="com.intellij.vcs.git.icons.GitIcons.PullRequestOpen"/>
 
     <group id="Git.WorkingTrees.ToolwindowGroup.Toolbar">
       <reference ref="Git.CreateNewWorkingTree"/>
@@ -869,6 +870,7 @@
                         testServiceImplementation="git4idea.commit.signing.GpgAgentPathsLocatorTestFactory"/>
 
     <recentProjectsBranchesProvider implementation="git4idea.repo.GitRecentProjectsBranchesProvider"/>
+    <recentProjectBrancher implementation="git4idea.branch.GitRecentProjectBrancher"/>
 
     <vcs.taskHandler implementation="git4idea.GitTaskHandler"/>
 
@@ -1103,6 +1105,10 @@
     <extensionPoint interface="git4idea.workingTrees.GitWorktreeOpenPathProvider"
                     qualifiedName="Git4Idea.gitWorktreeOpenPathProvider"
                     dynamic="true"/>
+    <extensionPoint interface="git4idea.workingTrees.GitWorktreeAdditionalConfigCopier"
+                    qualifiedName="Git4Idea.worktreeAdditionalConfigCopier" dynamic="true"/>
+    <extensionPoint interface="git4idea.workingTrees.dialog.GitWorktreeSettingsPanelProvider"
+                    qualifiedName="Git4Idea.worktreeSettingsPanelProvider" dynamic="true"/>
   </extensionPoints>
 
   <projectListeners>

@@ -10,6 +10,9 @@ import com.intellij.codeInsight.daemon.ProblemHighlightFilter;
 import com.intellij.codeInsight.daemon.impl.DaemonProgressIndicator;
 import com.intellij.codeInsight.daemon.impl.HighlightingSessionImpl;
 import com.intellij.codeInsight.daemon.impl.ProblemsViewBridge;
+import com.intellij.codeInsight.multiverse.CodeInsightContext;
+import com.intellij.codeInsight.multiverse.CodeInsightContextManager;
+import com.intellij.codeInsight.multiverse.CodeInsightContexts;
 import com.intellij.codeInsight.util.GlobalInspectionScopeKt;
 import com.intellij.codeInspection.CommonProblemDescriptor;
 import com.intellij.codeInspection.GlobalInspectionContext;
@@ -174,6 +177,10 @@ public class GlobalInspectionContextImpl extends GlobalInspectionContextEx {
   @SuppressWarnings("StaticNonFinalField")
   @TestOnly
   public static volatile boolean TESTING_VIEW;
+
+  @SuppressWarnings("StaticNonFinalField")
+  @TestOnly
+  public static volatile boolean TESTING_NON_HEADLESS;
 
   public static final String NOTIFICATION_GROUP = "Inspection Results";
 
@@ -408,7 +415,8 @@ public class GlobalInspectionContextImpl extends GlobalInspectionContextEx {
       }
     }
 
-    boolean headlessEnvironment = ApplicationManager.getApplication().isHeadlessEnvironment();
+    //noinspection TestOnlyProblems
+    boolean headlessEnvironment = ApplicationManager.getApplication().isHeadlessEnvironment() && !TESTING_NON_HEADLESS;
 
     Map<String, InspectionToolWrapper<?, ?>> map = getInspectionWrappersMap(localTools);
 
@@ -484,6 +492,8 @@ public class GlobalInspectionContextImpl extends GlobalInspectionContextEx {
                                                          @NotNull Map<String, InspectionToolWrapper<?, ?>> map) {
     PsiManager psiManager = PsiManager.getInstance(getProject());
     boolean inspectInjectedPsi = Registry.is("idea.batch.inspections.inspect.injected.psi", true);
+    boolean inspectAllContexts = Registry.is("batch.inspections.inspect.all.code.insight.contexts", false) &&
+                                 CodeInsightContexts.isSharedSourceSupportEnabled(getProject());
 
     return virtualFile -> {
       ProgressManager.checkCanceled();
@@ -492,22 +502,24 @@ public class GlobalInspectionContextImpl extends GlobalInspectionContextEx {
 
       Computable<Boolean> inspection = () -> {
         long start = getPathProfile() == null ? 0 : System.currentTimeMillis();
-        PsiFile psiFile = virtualFile.isValid() ? psiManager.findFile(virtualFile) : null;
-        if (psiFile == null) {
+        List<PsiFile> psiFiles = findPsiFilesToInspect(psiManager, virtualFile, inspectAllContexts);
+        if (psiFiles.isEmpty()) {
           return true;
         }
         if (!scope.contains(virtualFile)) {
-          LOG.info(psiFile.getName() + "; scope: " + scope + "; " + virtualFile);
+          LOG.info(psiFiles.getFirst().getName() + "; scope: " + scope + "; " + virtualFile);
           return true;
         }
         boolean includeDoNotShow = includeDoNotShow(getCurrentProfile());
-        EnabledInspectionsProvider.ToolWrappers wrappers = getWrappersFromTools(enabledInspectionsProvider, psiFile, includeDoNotShow);
+        EnabledInspectionsProvider.ToolWrappers wrappers = getWrappersFromTools(enabledInspectionsProvider, psiFiles.getFirst(), includeDoNotShow);
         wrappersForThisFile.set(wrappers);
 
-        inspectFile(psiFile, getEffectiveRange(searchScope, psiFile), inspectionManager, map,
-                    wrappers.getGlobalSimpleRegularWrappers(),
-                    wrappers.getLocalRegularWrappers(),
-                    inspectInjectedPsi && scope.isAnalyzeInjectedCode());
+        for (PsiFile psiFile : psiFiles) {
+          inspectFile(psiFile, getEffectiveRange(searchScope, psiFile), inspectionManager, map,
+                      wrappers.getGlobalSimpleRegularWrappers(),
+                      wrappers.getLocalRegularWrappers(),
+                      inspectInjectedPsi && scope.isAnalyzeInjectedCode());
+        }
         if (start != 0) {
           updateProfile(virtualFile, System.currentTimeMillis() - start);
         }
@@ -559,6 +571,21 @@ public class GlobalInspectionContextImpl extends GlobalInspectionContextEx {
 
       return true;
     };
+  }
+
+  private static @NotNull List<PsiFile> findPsiFilesToInspect(@NotNull PsiManager psiManager,
+                                                              @NotNull VirtualFile virtualFile,
+                                                              boolean inspectAllContexts) {
+    if (!virtualFile.isValid()) {
+      return List.of();
+    }
+    if (inspectAllContexts) {
+      List<CodeInsightContext> contexts = CodeInsightContextManager.getInstance(psiManager.getProject()).getCodeInsightContexts(virtualFile);
+      if (contexts.size() > 1) {
+        return ContainerUtil.mapNotNull(contexts, context -> psiManager.findFile(virtualFile, context));
+      }
+    }
+    return ContainerUtil.createMaybeSingletonList(psiManager.findFile(virtualFile));
   }
 
   private static void setupCancelOnWriteProgress(@NotNull Disposable disposable, @NotNull ProgressIndicator progressIndicator) {
@@ -764,7 +791,7 @@ public class GlobalInspectionContextImpl extends GlobalInspectionContextEx {
       return null; //do not inspect binary files
     }
 
-    if (myViewClosed && !headlessEnvironment) {
+    if (myViewClosed && !headlessEnvironment && !isExportRun()) {
       throw new ProcessCanceledException();
     }
 
@@ -810,7 +837,9 @@ public class GlobalInspectionContextImpl extends GlobalInspectionContextEx {
 
     TraceKt.use(tracer.spanBuilder("globalInspectionsAnalysis"), _ -> {
       for (Tools tools : globalTools) {
+        ProgressManager.checkCanceled();
         for (ScopeToolState state : tools.getTools()) {
+          ProgressManager.checkCanceled();
           if (!state.isEnabled()) continue;
           NamedScope stateScope = state.getScope(getProject());
           if (stateScope == null) continue;
@@ -841,7 +870,15 @@ public class GlobalInspectionContextImpl extends GlobalInspectionContextEx {
               }
             };
             if (tool.isReadActionNeeded()) {
-              ReadAction.runBlocking(runnable);
+              if (isOfflineInspections) {
+                ReadAction.runBlocking(runnable);
+              }
+              else {
+                ReadAction.computeCancellableUnsafe(() -> {
+                  runnable.run();
+                  return null;
+                });
+              }
             }
             else {
               runnable.run();
@@ -992,7 +1029,8 @@ public class GlobalInspectionContextImpl extends GlobalInspectionContextEx {
   @Override
   public void close(boolean noSuspiciousCodeFound) {
     if (!noSuspiciousCodeFound) {
-      if (myView.isRerun()) {
+      InspectionResultsView view = myView;
+      if (view != null && view.isRerun()) {
         myViewClosed = true;
         myView = null;
       }
@@ -1009,6 +1047,19 @@ public class GlobalInspectionContextImpl extends GlobalInspectionContextEx {
     ((InspectionManagerEx)InspectionManager.getInstance(getProject())).closeRunningContext(this);
     myPresentationMap.clear();
     super.close(noSuspiciousCodeFound);
+  }
+
+  @Override
+  void resetTools() {
+    for (InspectionToolPresentation presentation : myPresentationMap.values()) {
+      presentation.cleanup();
+    }
+    myPresentationMap.clear();
+    if (runToolsSpan != null) {
+      runToolsSpan.end();
+      runToolsSpan = null;
+    }
+    super.resetTools();
   }
 
   @Override
@@ -1312,9 +1363,21 @@ public class GlobalInspectionContextImpl extends GlobalInspectionContextEx {
     return myViewClosed;
   }
 
+  /**
+   * Runs started via {@link #performInspectionsWithProgressAndExportResults} or {@link #launchInspectionsOffline} write their results
+   * to the output directory and never create an {@link InspectionResultsView}, so there is no view for the user to close
+   * and nothing to show in the tool window.
+   */
+  private boolean isExportRun() {
+    return getOutputPath() != null;
+  }
+
   private void addProblemsToView(@NotNull List<? extends Tools> tools) {
     //noinspection TestOnlyProblems
-    if (ApplicationManager.getApplication().isHeadlessEnvironment() && !TESTING_VIEW) {
+    if (ApplicationManager.getApplication().isHeadlessEnvironment() && !TESTING_VIEW && !TESTING_NON_HEADLESS) {
+      return;
+    }
+    if (isExportRun()) {
       return;
     }
     if (myView == null && !InspectionResultsView.hasProblems(tools, this, new InspectionRVContentProviderImpl())) {

@@ -44,7 +44,6 @@
     <!-- region Generated dependencies - run `Generate Product Layouts` to regenerate -->
     <module name="fleet.rhizomedb"/>
     <module name="intellij.libraries.caffeine"/>
-    <module name="intellij.libraries.fastutil"/>
     <module name="intellij.libraries.guava"/>
     <module name="intellij.libraries.jediterm.core"/>
     <module name="intellij.libraries.jediterm.ui"/>
@@ -57,6 +56,8 @@
     <module name="intellij.platform.analysis.impl"/>
     <module name="intellij.platform.codeStyle"/>
     <module name="intellij.platform.concurrency"/>
+    <module name="intellij.platform.consoleView"/>
+    <module name="intellij.platform.consoleView.impl"/>
     <module name="intellij.platform.core"/>
     <module name="intellij.platform.core.impl"/>
     <module name="intellij.platform.core.ui"/>
@@ -71,9 +72,9 @@
     <module name="intellij.platform.ide.core"/>
     <module name="intellij.platform.ide.core.impl"/>
     <module name="intellij.platform.ide.impl"/>
-    <module name="intellij.platform.ide.internal"/>
     <module name="intellij.platform.ide.observable"/>
     <module name="intellij.platform.ide.progress"/>
+    <module name="intellij.platform.ide.tabInEditor"/>
     <module name="intellij.platform.ide.ui"/>
     <module name="intellij.platform.ijent"/>
     <module name="intellij.platform.indexing"/>
@@ -88,6 +89,7 @@
     <module name="intellij.platform.rpc.lite"/>
     <module name="intellij.platform.rpc.topics"/>
     <module name="intellij.platform.statistics"/>
+    <module name="intellij.platform.util.annotations"/>
     <module name="intellij.platform.util.coroutines"/>
     <module name="intellij.platform.util.diff"/>
     <module name="intellij.platform.util.text.matching"/>
@@ -103,10 +105,11 @@
     <module name="intellij.terminal.frontend.split"/>
     <module name="intellij.terminal.cloud"/>
     <module name="intellij.terminal.sh"/>
+    <module name="intellij.terminal.completion.ml"/>
     <module name="intellij.terminal.agentsProvider"/>
   </content>
   <content>
-    <module name="intellij.libraries.completion.ranking.sh" loading="embedded"/>
+    <module name="intellij.libraries.completion.ranking.sh"/>
     <module name="intellij.terminal.libraries.completionDbWithExtensions" loading="embedded"/>
   </content>
 

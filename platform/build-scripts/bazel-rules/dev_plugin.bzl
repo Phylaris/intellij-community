@@ -1,11 +1,12 @@
 """Packs one simple plugin of a dev distribution directly, with no plan file and no Kotlin preparation.
 
 A simple plugin is a plugin whose every asset is a jar or a plain copy. Each jar merges module outputs, library jars and,
-for the jar of the main module, the patched descriptor. A plain copy places one file, or every file of a directory, at a
-destination as it is. The plugin's own `BUILD.bazel` states the jars on `dev_dist_plugin(jars = ...)` and the copies on
-`dev_dist_plugin(files = ...)`. This file packs the jars with the same packer `content_module_jar` uses, and it names the
-copied files to the collector, which hashes them; the composer copies their bytes once, into the distribution. A plugin
-with any other asset keeps the plan driven chain of `dev_plugin_remainder.bzl`.
+for the jar of the main module, the patched descriptor. A plain copy places one file, every file of a source tree, or
+every file of one directory artifact at a destination as it is. The plugin's own `BUILD.bazel` states the jars on
+`dev_dist_plugin(jars = ...)` and the copies on `dev_dist_plugin(files = ...)`. This file packs the jars with the same
+packer `content_module_jar` uses, and it names the copied files to the collector, which hashes them; the composer copies
+their bytes once, into the distribution. The collector walks a directory artifact when it runs, because analysis cannot
+list its files. A plugin with any other asset keeps the plan driven chain of `dev_plugin_remainder.bzl`.
 
 Two rules, because of the product configuration. The consumer reaches `_dev_plugin` in the product's configuration, so
 the descriptor it packs is stamped for that product. The module jars and the copied files must not follow: they are the
@@ -23,7 +24,7 @@ load(":content_module_jar.bzl", "ContentModuleJarInfo", "declare_spans", "librar
 load(":dev_dist_content.bzl", "DevDistContentInfo")
 load(":dev_dist_plugin_descriptor.bzl", "DevDistPluginDescriptorInfo", "DevDistProductInfo", "dev_dist_neutral_product_transition")
 load(":dev_plugin_source_tree.bzl", "source_tree_entries", "source_tree_prefix")
-load(":intellij_dev_dist.bzl", "IntellijDevFragmentInfo")
+load(":intellij_dev_dist.bzl", "DevDistPlacementInfo", "IntellijDevFragmentInfo")
 
 DevDistRuntimeLayoutInfo = provider(
     doc = """The layout part of one plugin component: which modules and libraries each of its jars merges.
@@ -41,11 +42,12 @@ DevDistRuntimeLayoutInfo = provider(
 DevPluginInputsInfo = provider(
     doc = "The compiled inputs of one simple plugin, resolved in the neutral product configuration.",
     fields = {
-        "module_jars": "dict of JPS module name to its output jar `File`.",
+        "module_jars": "dict of JPS module name to its output jar `File`. A test-only module maps to its test jar.",
         "libraries": "dict of library token to `struct(label, jars)`. The token is the label string the plugin's `BUILD.bazel` writes.",
         "content_jars": """dict of JPS module name to `struct(jar, metadata, member_modules, library_jars)`: the jar a
         `content_module_jar` target packed, and what it merges, see `ContentModuleJarInfo`.""",
-        "files": "dict of label token to the tuple of regular `File`s the label produces. The token is the label string `files` names.",
+        "files": """dict of label token to the tuple of `File`s the label produces: regular files, or one directory artifact
+        alone. The token is the label string `files` names.""",
         "content": "`DevDistContentInfo`: every raw module jar and library the plugin merges, the members of a reused content module jar included.",
     },
 )
@@ -59,6 +61,16 @@ def _dev_plugin_inputs_impl(ctx):
         if name in module_jars:
             fail("module '%s' is named twice" % name, attr = "modules")
         module_jars[name] = jar
+
+    # A test jar label is a `.jar` output, as the complex chain names it in `artifact_inputs`. `module_output_jar` looks
+    # for `<label name>.jar` and misses it, so the rule reads the one file of the label, as `libraries` does for a jar file.
+    for target, name in ctx.attr.test_module_jars.items():
+        files = target[DefaultInfo].files.to_list()
+        if len(files) != 1 or not files[0].basename.endswith(".jar"):
+            fail("%s is not one jar file for test-only module '%s'" % (target.label, name), attr = "test_module_jars")
+        if name in module_jars:
+            fail("module '%s' is named twice" % name, attr = "test_module_jars")
+        module_jars[name] = files[0]
 
     libraries = {}
     for target, token in ctx.attr.libraries.items():
@@ -74,7 +86,7 @@ def _dev_plugin_inputs_impl(ctx):
             fail("%s is neither a library container nor one jar file" % target.label, attr = "libraries")
         libraries[token] = struct(label = str(target.label), jars = tuple(files))
 
-    # The raw content, for the fragment that lays the plugin out without packing it: the plugin's own module jars and
+    # The raw content, for the reference that lays the plugin out without packing it: the plugin's own module jars and
     # libraries, plus what each reused content module jar merged. Its recipe travels with it, see `ContentModuleJarInfo`.
     content_module_jars = list(module_jars.values())
     content_library_jars = list(libraries.values())
@@ -96,9 +108,10 @@ def _dev_plugin_inputs_impl(ctx):
         if token in files:
             fail("file token '%s' is named twice" % token, attr = "file_targets")
         listed = target[DefaultInfo].files.to_list()
-        for file in listed:
-            if file.is_directory:
-                fail("%s produces directory %s, and a copy takes regular files only" % (target.label, file.path), attr = "file_targets")
+        if len(listed) != 1:
+            for file in listed:
+                if file.is_directory:
+                    fail("%s produces directory %s, and a copy takes regular files only, or one directory alone" % (target.label, file.path), attr = "file_targets")
         files[token] = tuple(listed)
 
     return [
@@ -120,6 +133,13 @@ _dev_plugin_inputs = rule(
         "modules": attr.label_keyed_string_dict(
             doc = "Every module a jar merges, valued by its JPS module name.",
             providers = [_KtJvmInfo],
+        ),
+        "test_module_jars": attr.label_keyed_string_dict(
+            doc = """The test jar of every test-only module a jar merges, valued by its JPS module name.
+
+A `.jar` output, as the complex chain names it in `artifact_inputs`, so the `testonly` of the library does not spread to
+the component.""",
+            allow_files = [".jar"],
         ),
         "libraries": attr.label_keyed_string_dict(
             doc = "Every library container or jar file a jar merges, valued by the token `jars` names it with.",
@@ -168,8 +188,8 @@ def _parents(destination):
     return ["/".join(parts[:size]) for size in range(1, len(parts))]
 
 # Every destination of the plugin, so a jar and a copy never meet. `owned` maps a file destination to the words that say
-# where it comes from; `directories` holds every directory a destination implies, and `copied` every directory a `files`
-# entry copies as a whole.
+# where it comes from; `directories` holds every directory a destination implies, and `copied` maps every directory a
+# `files` entry copies as a whole to the attribute that states the copy.
 def _new_destinations():
     return struct(owned = {}, directories = {}, copied = {})
 
@@ -186,44 +206,54 @@ def _claim_destination(destinations, destination, owner, attr, directory = None)
         if parent in destinations.owned:
             fail("'%s' is below '%s', which is %s" % (destination, parent, destinations.owned[parent]), attr = attr)
         if parent in destinations.copied and parent != directory:
-            fail("'%s' is below '%s', which `file_prefixes` copies as a whole" % (destination, parent), attr = attr)
+            fail("'%s' is below '%s', which `%s` copies as a whole" % (destination, parent, destinations.copied[parent]), attr = attr)
         destinations.directories[parent] = True
     destinations.owned[destination] = owner
 
-def _claim_copied_directory(destinations, destination):
+def _claim_copied_directory(destinations, destination, attr):
+    """Owns the directory `destination` as a whole. `attr` is the attribute that states the copy."""
     if destination in destinations.owned:
-        fail("'%s' is both %s and copied as a whole" % (destination, destinations.owned[destination]), attr = "file_prefixes")
+        fail("'%s' is both %s and copied as a whole" % (destination, destinations.owned[destination]), attr = attr)
     if destination in destinations.directories:
-        fail("'%s' is a directory of another destination" % destination, attr = "file_prefixes")
+        fail("'%s' is a directory of another destination" % destination, attr = attr)
     for parent in _parents(destination):
         if parent in destinations.owned:
-            fail("'%s' is below '%s', which is %s" % (destination, parent, destinations.owned[parent]), attr = "file_prefixes")
+            fail("'%s' is below '%s', which is %s" % (destination, parent, destinations.owned[parent]), attr = attr)
         if parent in destinations.copied:
-            fail("'%s' is below '%s', which `file_prefixes` also copies as a whole" % (destination, parent), attr = "file_prefixes")
-    destinations.copied[destination] = True
+            fail("'%s' is below '%s', which `%s` also copies as a whole" % (destination, parent, destinations.copied[parent]), attr = attr)
+    destinations.copied[destination] = attr
 
 _STATED_IN_JARS = "stated in `jars`"
 _REUSED = "reused from a content module jar"
 _COPIED = "copied by `files`"
 
 def _copies(ctx, inputs, destinations):
-    """The copied files as `struct(destination, file, executable)`, sorted by destination.
+    """The copied files as `struct(destination, file, executable, tree)`, sorted by destination.
 
     A destination in `file_prefixes` is a directory copy: every file of the label below the prefix lands at
-    `<destination>/<entry>`. Any other destination copies the one file its label produces.
+    `<destination>/<entry>`. A destination in `tree_files` copies the one directory artifact of its label, and the
+    collector walks it. Any other destination copies the one file its label produces.
     """
     for destination in ctx.attr.file_prefixes:
         if destination not in ctx.attr.files:
             fail("file_prefixes names '%s', which `files` does not copy" % destination, attr = "file_prefixes")
+    for destination in ctx.attr.tree_files:
+        if destination not in ctx.attr.files:
+            fail("tree_files names '%s', which `files` does not copy" % destination, attr = "tree_files")
+        if destination in ctx.attr.file_prefixes:
+            fail("tree_files names '%s', which `file_prefixes` also names; a copy takes one directory or one source tree" % destination, attr = "tree_files")
     for destination in ctx.attr.executable_files:
         if destination not in ctx.attr.files:
             fail("executable_files names '%s', which `files` does not copy" % destination, attr = "executable_files")
-        if destination in ctx.attr.file_prefixes:
+        if destination in ctx.attr.file_prefixes or destination in ctx.attr.tree_files:
             fail("executable_files names '%s', which is a directory copy; the mode of a copied directory is not stated" % destination, attr = "executable_files")
 
     for destination in ctx.attr.file_prefixes:
         _check_destination(destination, attr = "file_prefixes", jar = False)
-        _claim_copied_directory(destinations, destination)
+        _claim_copied_directory(destinations, destination, "file_prefixes")
+    for destination in ctx.attr.tree_files:
+        _check_destination(destination, attr = "tree_files", jar = False)
+        _claim_copied_directory(destinations, destination, "tree_files")
 
     copies = []
     for destination in sorted(ctx.attr.files):
@@ -231,19 +261,27 @@ def _copies(ctx, inputs, destinations):
         sources = inputs.files.get(token)
         if sources == None:
             fail("'%s' names %s, which `file_targets` does not declare" % (destination, token), attr = "files")
+        directory = len(sources) == 1 and sources[0].is_directory
+        if destination in ctx.attr.tree_files:
+            if not directory:
+                fail("tree_files names '%s', and %s produces no single directory" % (destination, token), attr = "tree_files")
+            copies.append(struct(destination = destination, file = sources[0], executable = False, tree = True))
+            continue
+        if directory:
+            fail("'%s' copies directory %s of %s; state the destination in `tree_files`" % (destination, sources[0].path, token), attr = "files")
         prefix = ctx.attr.file_prefixes.get(destination)
         if prefix == None:
             _check_destination(destination, attr = "files", jar = False)
             if len(sources) != 1:
                 fail("'%s' copies one file, and %s produces %d files; state a directory copy in `file_prefixes`" % (destination, token, len(sources)), attr = "files")
             _claim_destination(destinations, destination, _COPIED, "files")
-            copies.append(struct(destination = destination, file = sources[0], executable = destination in ctx.attr.executable_files))
+            copies.append(struct(destination = destination, file = sources[0], executable = destination in ctx.attr.executable_files, tree = False))
             continue
         entries = source_tree_entries(sources, source_tree_prefix(prefix, destination), destination, token)
         for entry in sorted(entries):
             path = destination + "/" + entry
             _claim_destination(destinations, path, _COPIED, "files", directory = destination)
-            copies.append(struct(destination = path, file = entries[entry], executable = False))
+            copies.append(struct(destination = path, file = entries[entry], executable = False, tree = False))
     return copies
 
 def _dev_plugin_impl(ctx):
@@ -312,6 +350,8 @@ def _dev_plugin_impl(ctx):
 
         library_jars = merge_order_jars(library_entries)
         has_main = main_module in module_names
+
+        extra_flags = ["merge-entities=true"]
         output = ctx.actions.declare_file(ctx.label.name + "/" + destination)
         metadata = ctx.actions.declare_file(ctx.label.name + ".metadata/" + destination + ".json")
         jar_spans = declare_spans(ctx, ctx.label.name + "/" + destination[:-len(".jar")])
@@ -324,7 +364,7 @@ def _dev_plugin_impl(ctx):
             merged_module_names = module_names,
             mnemonic = "PackDevPluginJar",
             progress_message = "Packing %s of %%{label}" % destination,
-            extra_flags = ["merge-entities=true"],
+            extra_flags = extra_flags,
             descriptor = descriptor_info.descriptor if has_main else None,
             descriptor_module = main_module if has_main else None,
             metadata = metadata,
@@ -357,13 +397,16 @@ def _dev_plugin_impl(ctx):
         })
 
     # The collector reads the jars in spec order and writes the classpath record in that order. `classpath_jars` states
-    # the order when the plan's order is not the default one.
+    # the order when the plan's order is not the default one. The layout part takes the same order, so a reused jar with
+    # a custom path keeps its place among the jars of the layout pass.
     if ctx.attr.classpath_jars:
         by_destination = {entry.destination: entry for entry in packed}
         classpath_jars = [destination for destination in ctx.attr.classpath_jars if destination in by_destination] if refused else ctx.attr.classpath_jars
         if sorted(classpath_jars) != sorted(by_destination.keys()):
             fail("classpath_jars must name every jar once; the jars are %s" % sorted(by_destination.keys()), attr = "classpath_jars")
         packed = [by_destination[destination] for destination in classpath_jars]
+        layout_by_destination = {entry["destination"]: entry for entry in layout_jars}
+        layout_jars = [layout_by_destination[destination] for destination in classpath_jars]
 
     copies = _copies(ctx, inputs, destinations)
     copied_files = [copy.file for copy in copies]
@@ -380,10 +423,11 @@ def _dev_plugin_impl(ctx):
         ],
     }
 
-    # Absent, and not empty, for a plugin without a copy: the spec of every jar-only plugin stays byte-identical.
+    # Absent, and not empty, for a plugin without a copy: the spec of every jar-only plugin stays byte-identical. A tree
+    # states no mode: the collector keeps the mode of each file it finds.
     if copies:
         spec_content["files"] = [
-            {"destination": copy.destination, "source": copy.file.path, "executable": copy.executable}
+            {"destination": copy.destination, "source": copy.file.path, "tree": True} if copy.tree else {"destination": copy.destination, "source": copy.file.path, "executable": copy.executable}
             for copy in copies
         ]
     ctx.actions.write(spec, json.encode(spec_content) + "\n")
@@ -425,11 +469,20 @@ def _dev_plugin_impl(ctx):
     }) + "\n")
 
     payload = depset([entry.jar for entry in packed] + copied_files)
+    placed_files = {plugin_directory + "/" + entry.destination: entry.jar for entry in packed}
+    placed_trees = {}
+    for copy in copies:
+        (placed_trees if copy.tree else placed_files)[plugin_directory + "/" + copy.destination] = copy.file
+    placement = DevDistPlacementInfo(
+        files = placed_files,
+        trees = placed_trees,
+        executables = [plugin_directory + "/" + copy.destination for copy in copies if copy.executable],
+    )
     return [
         DefaultInfo(files = depset([manifest, classpath]), runfiles = ctx.runfiles(transitive_files = payload)),
         DevDistRuntimeLayoutInfo(part = runtime_layout, descriptor = classpath_descriptor, descriptor_module = main_module),
         # The raw content, published beside the packed component: `dev_dist_plugin_content` unions it per product for
-        # the fragment that lays the plugin out without packing it.
+        # the reference that lays the plugin out without packing it.
         inputs.content,
         IntellijDevFragmentInfo(
             name = main_module,
@@ -438,6 +491,7 @@ def _dev_plugin_impl(ctx):
             plugin_classpath_part = classpath,
             plugin_classpath_prefix = None,
         ),
+        placement,
         OutputGroupInfo(
             dev_dist_plugin_outputs = depset([manifest, classpath], transitive = [payload]),
             dev_dist_plugin_classpath = depset([classpath]),
@@ -464,7 +518,9 @@ Not transitioned. The consumer reaches it in the product configuration, and `_pr
             doc = """The jars, keyed by destination relative to the plugin directory and valued by source tokens in merge order.
 
 A token is a JPS module name, or a label token, which holds `//`, of a library container or a jar file. The jar of the
-main module receives the patched descriptor.""",
+main module receives the patched descriptor. A destination can name a subdirectory of `lib/`, such as
+`lib/rt/debugger-agent.jar`. The packer checks a `Boot-Class-Path` of a module manifest against the file name of the
+destination.""",
             mandatory = True,
         ),
         "module_jar_paths": attr.string_dict(
@@ -472,12 +528,13 @@ main module receives the patched descriptor.""",
         ),
         "classpath_jars": attr.string_list(
             doc = """The classpath order of every jar, by destination. Empty takes the default order: the `jars` keys, then the
-reused content module jars in `content_module_jars` order.""",
+reused content module jars in `content_module_jars` order. The layout part states its jars in the same order.""",
         ),
         "files": attr.string_dict(
             doc = """The plain copies, keyed by destination relative to the plugin directory and valued by the label token of
-the source. A destination `file_prefixes` names copies every file of the label below the prefix; any other destination
-copies the one file the label produces. A copied file is not on the plugin classpath.""",
+the source. A destination `file_prefixes` names copies every file of the label below the prefix. A destination
+`tree_files` names copies every file of the one directory artifact the label produces. Any other destination copies the
+one file the label produces. A copied file is not on the plugin classpath.""",
         ),
         "file_prefixes": attr.string_dict(
             doc = """The repository-relative prefix of each directory copy in `files`, keyed by destination. A file of the label
@@ -485,6 +542,11 @@ at `<prefix>/<entry>` lands at `<destination>/<entry>`.""",
         ),
         "executable_files": attr.string_list(
             doc = "The single-file destinations of `files` the distribution marks executable, as `withResource*` does with mode 493.",
+        ),
+        "tree_files": attr.string_list(
+            doc = """The destinations of `files` whose label produces one directory artifact. The collector walks the directory
+when it runs. Each directory and regular file keeps its mode and lands at `<destination>/<relative path>`. A link is
+refused.""",
         ),
         "_collector": attr.label(default = "//platform/build-scripts/bazel-rules:dev_dist_collector", executable = True, cfg = "exec"),
         "_packer": attr.label(default = "//platform/build-scripts/bazel-rules:content_module_packer", executable = True, cfg = "exec"),
@@ -502,7 +564,8 @@ def dev_plugin(
         main_module,
         descriptor,
         plugin_directory,
-        modules,
+        modules = {},
+        test_module_jars = {},
         libraries = [],
         content_module_jars = [],
         jars = {},
@@ -511,6 +574,7 @@ def dev_plugin(
         files = {},
         file_prefixes = {},
         executable_files = [],
+        tree_files = [],
         tags = [],
         visibility = ["//visibility:public"],
         **kwargs):
@@ -521,7 +585,9 @@ def dev_plugin(
         main_module: the main JPS module.
         descriptor: the plugin's `dev_dist_plugin_descriptor` target.
         plugin_directory: `plugins/<directory>`.
-        modules: dict of module target to JPS module name, every module a jar merges.
+        modules: dict of module target to JPS module name, every module a jar merges except a test-only one.
+        test_module_jars: dict of test jar label to JPS module name, every test-only module a jar merges. The label is
+            the `_test_lib.jar` output, so the component does not become `testonly`.
         libraries: the library container and jar file labels `jars` names, as the same strings.
         content_module_jars: the `content_module_jar` targets of the content modules no jar merges.
         jars: destination to source tokens, see `_dev_plugin`.
@@ -529,9 +595,10 @@ def dev_plugin(
         classpath_jars: the classpath order of every jar, when the default order is not the plan's order. The default
             order is the `jars` keys, then the reused content module jars in `content_module_jars` order.
         files: destination to the label of a plain copy, see `_dev_plugin`. The label is a source file, a filegroup or
-            another target that produces regular files.
-        file_prefixes: destination to repository-relative prefix, for every entry of `files` that copies a directory.
+            another target that produces regular files, or a target that produces one directory artifact.
+        file_prefixes: destination to repository-relative prefix, for every entry of `files` that copies a source tree.
         executable_files: the single-file destinations of `files` that are executable.
+        tree_files: the destinations of `files` that copy one directory artifact.
         tags: extra tags. `manual` is added.
         visibility: the component's visibility, public by default because the product's dist is in another package.
             The inputs target is private.
@@ -542,6 +609,7 @@ def dev_plugin(
     _dev_plugin_inputs(
         name = inputs,
         modules = modules,
+        test_module_jars = test_module_jars,
         libraries = {library: library for library in libraries},
         content_module_jars = content_module_jars,
         file_targets = {label: label for label in files.values()},
@@ -562,6 +630,7 @@ def dev_plugin(
         files = files,
         file_prefixes = file_prefixes,
         executable_files = executable_files,
+        tree_files = tree_files,
         tags = tags + ["manual"],
         **kwargs
     )

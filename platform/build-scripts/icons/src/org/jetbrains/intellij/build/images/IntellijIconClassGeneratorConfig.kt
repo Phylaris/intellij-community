@@ -44,6 +44,10 @@ class IntellijIconClassGeneratorConfig : IconClasses() {
         packageName = "com.jetbrains.rider.cpp.icons",
         iconDirectory = "icons/expui",
       )
+      "intellij.rider.cpp.core.languages" -> IntellijIconClassGeneratorModuleConfig(
+        className = "RiderCppCoreLanguagesIcons",
+        packageName = "com.jetbrains.rider.cpp.fileType.icons",
+      )
       "intellij.clouds.docker.gateway" -> IntellijIconClassGeneratorModuleConfig(
         className = "DockerGatewayIcons",
         packageName = "com.intellij.clouds.docker.gateway"
@@ -249,6 +253,11 @@ class IntellijIconClassGeneratorConfig : IconClasses() {
       "intellij.postcss.paid" -> IntellijIconClassGeneratorModuleConfig(
         className = "PostCssIcons",
         packageName = "org.intellij.plugins.postcss",
+      )
+
+      "intellij.platform.problemView.security" -> IntellijIconClassGeneratorModuleConfig(
+        className = "SecurityProblemsViewIcons",
+        packageName = "com.intellij.platform.problemView.security.icons",
       )
 
       else -> super.getConfigForModule(moduleName)

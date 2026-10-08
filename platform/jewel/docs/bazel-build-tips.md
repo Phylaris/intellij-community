@@ -66,14 +66,14 @@ But... Please double-check the dumps it changed before pushing.
 [Spectre](https://spectre.sebastiano.dev) drives a real Compose Desktop window, so its tests need a display and a
 non-headless JVM. That rules out `jps_test`, which forces `-Djava.awt.headless=true` and puts the IntelliJ test
 runtime on the classpath — the latter would hide exactly the standalone-runtime leaks these tests exist to catch.
-The lane therefore uses the `spectre_test` macro in [spectre.bzl](../spectre.bzl), which runs the JUnit Platform
+The lane therefore uses the `standalone_e2e_test` macro in [standalone-e2e.bzl](../standalone-e2e.bzl), which runs the JUnit Platform
 console launcher on a classpath containing only the module under test, Compose, and Spectre.
 
 These are ordinary test targets. On any machine with a display they run as part of `bazel test //platform/jewel/...`,
 or on their own:
 
 ```bash
-./bazel.cmd test //platform/jewel/int-ui/int-ui-standalone-tests:jewel-intUi-standalone-spectre-tests
+./bazel.cmd test //platform/jewel/int-ui/int-ui-standalone-tests:jewel-intUi-standalone-e2e-tests
 ```
 
 Windows will open and close on your desktop while they run; synthetic input goes to the test window, so you can keep
@@ -82,13 +82,13 @@ working, but do not be surprised by the flicker.
 Every Spectre target is tagged `requires-display`. That tag is both the CI routing hint and the escape hatch: a lane
 that genuinely has no display skips them with `--test_tag_filters=-requires-display`.
 
-### Scope: standalone only
+### Scope: standalone here, the bridge next door
 
-This lane covers **standalone** Jewel, and cannot be extended to the IJP bridge. Spectre automates a Compose Desktop
-window; inside the IDE a Jewel popup is a `JBPopup` hosting a `ComposePanel`, and the application under test is the
-IDE itself. So `JBPopupRenderer` and the other bridge renderers currently have **no headful coverage at all** — only
-the Compose UI unit tests in `ui-tests`. That gap is JEWEL-1397, which is IDE Starter / UI Driver work rather than
-Spectre work. Do not try to add a bridge test to `src/spectreTest`; it cannot run there.
+This lane covers **standalone** Jewel, and a bridge test cannot be added to `src/spectreTest`: Spectre automates a
+Compose Desktop window, whereas inside the IDE a Jewel popup is a `JBPopup` hosting a `ComposePanel` and the
+application under test is the IDE itself.
+
+The IDE is covered by a separate test that shares its scenarios with this lane. See [End-to-end tests](e2e-tests.md).
 
 ### Adding a Spectre test
 
@@ -108,7 +108,7 @@ instead of a green one that ran nothing.
 ### CI
 
 Spectre targets are meant to run on **both** CI systems, and neither needs a target list — both select by tag, so a
-new `spectre_test` target anywhere under `platform/jewel` joins CI on its own:
+new `standalone_e2e_test` target anywhere under `platform/jewel` joins CI on its own:
 
 ```bash
 bazel test //platform/jewel/... --build_tests_only --test_tag_filters=requires-display
@@ -134,102 +134,20 @@ depend on it, which is how Spectre stays out of the IDE and out of published Jew
 ## Add Devkit to IDE Build
 
 On JPS we had a handy run configuration that built the IDE with the devkit bundled. On Bazel, the `idea_community`
-configuration does not do that by default.
+launcher does not bundle it.
 
 This means that you won't find anything if you try to find the Jewel Components Showcase or Jewel Tool Window via
 the actions search.
 
-No biggie, we can circumvent this easily enough by just applying **one** of
-the git patches below. Choose the one that you think best suits your tastes:
+Run the launcher that adds the devkit instead:
 
-### Add a new build target
-
-```git
-Subject: [PATCH] add ijc build with devkit
----
-Index: build/BUILD.bazel
-IDEA additional info:
-Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
-<+>UTF-8
-===================================================================
-diff --git a/build/BUILD.bazel b/build/BUILD.bazel
---- a/build/BUILD.bazel	(revision 65d9fd06454a6c1ff4925723fc5f944dbd7eda60)
-+++ b/build/BUILD.bazel	(date 1782307889085)
-@@ -73,6 +73,12 @@
-     runtime_deps = [":build"],
- )
-
-+intellij_dev_binary_community(
-+    name = "idea_community_devkit",
-+    platform_prefix = "community",
-+    additional_modules = "intellij.devkit",
-+)
-+
- # Dev-build targets for running IDEs locally via `bazel run //build:<target>`
- intellij_dev_binary_community(
-     name = "idea_community",
+```shell
+bazel run //build:idea_community_devkit
 ```
 
-And then run with: `bazel run //build:idea_community_devkit`
+`idea_community_devkit` is the launcher of the `IDEA With Compose (dev build)` run configuration. It adds the
+`intellij.devkit` plugin to IDEA Community.
 
-Once you run the command once, the configuration will be automatically "saved" in the configurations list.
-
-### Add the Devkit module to the existing IJC build
-
-Apply the git patch below:
-
-```git
-Subject: [PATCH] modify current idea_community build to bundle devkit
----
-Index: build/BUILD.bazel
-IDEA additional info:
-Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
-<+>UTF-8
-===================================================================
-diff --git a/build/BUILD.bazel b/build/BUILD.bazel
---- a/build/BUILD.bazel	(revision 65d9fd06454a6c1ff4925723fc5f944dbd7eda60)
-+++ b/build/BUILD.bazel	(date 1782308040029)
-@@ -77,6 +77,7 @@
- intellij_dev_binary_community(
-     name = "idea_community",
-     platform_prefix = "community",
-+    additional_modules = "intellij.devkit",
- )
-
- intellij_dev_binary_community(
-
-```
-
-Run with: `bazel run //build:idea_community` **or** just run the idea_community configuration in the configurations
-list.
-
-### Forcing IdeaCommunityProperties to bundle Devkit
-
-Apply the git patch below:
-
-```git
-Subject: [PATCH] add devkit as a bundled plugin in IdeaCommunityProperties
----
-Index: build/src/org/jetbrains/intellij/build/IdeaCommunityProperties.kt
-IDEA additional info:
-Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
-<+>UTF-8
-===================================================================
-diff --git a/build/src/org/jetbrains/intellij/build/IdeaCommunityProperties.kt b/build/src/org/jetbrains/intellij/build/IdeaCommunityProperties.kt
---- a/build/src/org/jetbrains/intellij/build/IdeaCommunityProperties.kt	(revision 65d9fd06454a6c1ff4925723fc5f944dbd7eda60)
-+++ b/build/src/org/jetbrains/intellij/build/IdeaCommunityProperties.kt	(date 1782308311182)
-@@ -59,7 +59,7 @@
-     )
-
-     productLayout.bundledPluginModules = IDEA_BUNDLED_PLUGINS + sequenceOf(
--      "intellij.javaFX.community"
-+      "intellij.javaFX.community", "intellij.devkit"
-     )
-
-     productLayout.prepareCustomPluginRepositoryForPublishedPlugins = false
-```
-
-Run with: `bazel run //build:idea_community` **or** just run the idea_community configuration in the configurations
-list.
-
-Whatever you choose, just remember to not push these changes to your branch :)
+A new launcher is a `DevMainKt` run configuration in `community/.idea/runConfigurations` plus a generator run from the
+ultimate root. A change of `IdeaCommunityProperties` reaches a launcher only after a generator run, because the
+launchers read the generated distribution declarations under `build/`.

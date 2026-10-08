@@ -11,7 +11,6 @@ import com.intellij.debugger.impl.hotswap.JvmHotSwapListener;
 import com.intellij.debugger.jdi.ThreadReferenceProxyImpl;
 import com.intellij.debugger.jdi.VirtualMachineProxyImpl;
 import com.intellij.debugger.ui.breakpoints.BreakpointManager;
-import com.intellij.debugger.ui.breakpoints.StackCapturingLineBreakpoint;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.project.Project;
@@ -135,7 +134,6 @@ class ReloadClassesWorker {
     final Project project = debugProcess.getProject();
     final BreakpointManager breakpointManager = (DebuggerManagerEx.getInstanceEx(project)).getBreakpointManager();
     breakpointManager.disableBreakpoints(debugProcess);
-    StackCapturingLineBreakpoint.deleteAll(debugProcess);
 
     //virtualMachineProxy.suspend();
     if (LOG.isDebugEnabled()) {
@@ -156,6 +154,7 @@ class ReloadClassesWorker {
     Set<String> classesToReload = Set.copyOf(modifiedClasses.keySet());
     notifyBeforeHotSwap(classesToReload);
     Set<String> reloadedClasses = Collections.emptySet();
+    Set<String> notLoadedClasses = Collections.emptySet();
     try {
       RedefineProcessor redefineProcessor = new RedefineProcessor(virtualMachineProxy);
 
@@ -205,12 +204,13 @@ class ReloadClassesWorker {
 
       LOG.debug("classes reloaded");
       reloadedClasses = Set.copyOf(redefineProcessor.myRedefinedClasses);
+      notLoadedClasses = Set.copyOf(redefineProcessor.myNotLoadedClasses);
     }
     catch (Throwable e) {
       processException(e);
     }
 
-    notifyAfterHotSwap(classesToReload, reloadedClasses);
+    notifyAfterHotSwap(classesToReload, reloadedClasses, notLoadedClasses);
     debugProcess.onHotSwapFinished();
 
     final Semaphore waitSemaphore = new Semaphore();
@@ -244,7 +244,6 @@ class ReloadClassesWorker {
     if (!project.isDisposed()) {
       try {
         breakpointManager.enableBreakpoints(debugProcess);
-        StackCapturingLineBreakpoint.createAll(debugProcess);
       }
       catch (Exception e) {
         processException(e);
@@ -256,8 +255,10 @@ class ReloadClassesWorker {
     JvmHotSwapListener.EP_NAME.forEachExtensionSafe(listener -> listener.beforeHotSwap(myDebuggerSession, classesToReload));
   }
 
-  private void notifyAfterHotSwap(@NotNull Set<String> classesToReload, @NotNull Set<String> reloadedClasses) {
-    JvmHotSwapListener.EP_NAME.forEachExtensionSafe(listener -> listener.afterHotSwap(myDebuggerSession, classesToReload, reloadedClasses));
+  private void notifyAfterHotSwap(@NotNull Set<String> classesToReload,
+                                  @NotNull Set<String> reloadedClasses,
+                                  @NotNull Set<String> notLoadedClasses) {
+    JvmHotSwapListener.EP_NAME.forEachExtensionSafe(listener -> listener.afterHotSwap(myDebuggerSession, classesToReload, reloadedClasses, notLoadedClasses));
   }
 
   private void reportProblem(String qualifiedName, @Nullable Exception ex) {
@@ -277,6 +278,7 @@ class ReloadClassesWorker {
     private final @NotNull VirtualMachineProxyImpl myVirtualMachineProxy;
     private final @NotNull Map<@NotNull ReferenceType, byte @NotNull []> myRedefineMap = new HashMap<>();
     private final @NotNull Set<@NotNull String> myRedefinedClasses = new HashSet<>();
+    private final @NotNull Set<@NotNull String> myNotLoadedClasses = new HashSet<>();
     private @Range(from = 0, to = Integer.MAX_VALUE) int myProcessedClassesCount;
     private @Range(from = 0, to = Integer.MAX_VALUE) int myPartiallyRedefinedClassesCount;
 
@@ -289,6 +291,7 @@ class ReloadClassesWorker {
 
       final List<ReferenceType> vmClasses = myVirtualMachineProxy.classesByName(qualifiedName);
       if (vmClasses.isEmpty()) {
+        myNotLoadedClasses.add(qualifiedName);
         return;
       }
 

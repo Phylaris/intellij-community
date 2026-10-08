@@ -15,7 +15,9 @@ import com.intellij.openapi.editor.impl.view.animation.EditorAnimationCacheStati
 import com.intellij.openapi.editor.impl.view.animation.EditorPainterCache.Companion.THRASH_COOLDOWN
 import com.intellij.openapi.editor.impl.view.animation.EditorPainterCache.Companion.THRASH_WINDOW
 import com.intellij.openapi.util.registry.Registry
+import com.intellij.openapi.wm.impl.IdeBackgroundUtil
 import com.intellij.ui.paint.use
+import com.intellij.ui.paint.useCopy
 import com.intellij.util.concurrency.annotations.RequiresEdt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -123,7 +125,7 @@ internal class EditorPainterCache(
     if (entry == null) {
       return recordMiss()
     }
-    (graphics.create() as Graphics2D).use { frameGraphics ->
+    IdeBackgroundUtil.getOriginalGraphics(graphics).useCopy { frameGraphics ->
       frameGraphics.clip(visibleRect)
       frameGraphics.composite = AlphaComposite.Src
       entry.paint(frameGraphics)
